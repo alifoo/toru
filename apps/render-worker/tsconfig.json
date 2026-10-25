@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "allowJs": false
+  },
+  "//": "The page entry lives in web/ and is built by Vite against vendored source written to upstream's compiler settings; type-checking it here would mean loosening ours or editing theirs.",
+  "include": ["vite.config.ts"]
+}

@@ -1,0 +1,35 @@
+{
+  "name": "@agent-recorder/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run src",
+    "start": "node dist/index.js",
+    "companion": "node dist/companion.js"
+  },
+  "dependencies": {
+    "@content-layer/browser": "workspace:*",
+    "@content-layer/render-contract": "workspace:*",
+    "@content-layer/render-host": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "tldts": "7.4.16",
+    "zod": "4.4.3"
+  },
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./oauth": "./dist/oauth.js",
+    "./recorder": "./dist/recorder.js",
+    "./lifecycle": "./dist/lifecycle.js",
+    "./erasure": "./dist/store/erasure.js",
+    "./egress": "./dist/egress.js",
+    "./store/open": "./dist/store/open.js",
+    "./store/backup": "./dist/store/backup.js",
+    "./policies": "./dist/policies.js"
+  }
+}

@@ -1,0 +1,23 @@
+# Toru
+
+> Toru is the recording infrastructure AI agents use to record product demos themselves. Your agent plans the flow and records it through Toru's tools in your own Chrome (Toru for Chrome) or on your Mac (Toru for Mac); Toru supplies the capture, camera moves, your brand and a check of every take, and returns an MP4 and a GIF. Toru adds no model of its own.
+
+## Product
+
+- [Overview](https://toru.tools/): What Toru does, where it records, privacy, pricing and FAQ.
+- [Guide](https://toru.tools/docs): Connect your agent, choose Chrome or Mac, ask for a demo, brand, delivery check and troubleshooting.
+- [Toru for Chrome](https://toru.tools/chrome): Record web apps in your own signed-in Chrome.
+- [Toru for Mac](https://toru.tools/mac): Record native apps on macOS 15 or newer.
+- [Pricing](https://toru.tools/pricing): Free: 10 credits/month. Creator: US$19/month, 50 credits. Studio: US$49/month, 150 credits. One credit is used per delivered video; videos held back by the delivery check are never charged. Agent subscriptions are separate.
+- [Terms of Service](https://toru.tools/terms) and [Privacy Policy](https://toru.tools/privacy).
+- [App](https://app.toru.tools/): Sign in, demos, connections, billing and settings (brand per product, filled from the product's site).
+
+## Connect
+
+Remote MCP endpoint: https://mcp.toru.tools/mcp (OAuth). Connecting the agent to Toru does not sign in to the product.
+
+Before asking Toru to record, write a plan of the flow from the product's code or live UI: the screens, the exact labels of buttons and fields, the values to enter, and what the final screen shows. Toru records only in the user's own Chrome (extension_devices, then recording_run with localConnectionId) or on their Mac (desktop_devices, then desktop_recording_run), where the user is already signed in. The run starts recording and hands you the window (agent_driving): drive it with the browser_* tools, mark the result, then call recording_run_finish; Toru renders and checks the video. Never launch another browser for Toru and never request passwords or sign-in codes in chat.
+
+## Contact
+
+support@toru.tools

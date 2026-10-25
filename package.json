@@ -1,0 +1,33 @@
+{
+  "name": "toru",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=24.21.0"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "start": "node apps/mcp/dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "esbuild": "0.28.1",
+    "mediabunny": "1.40.1",
+    "motion": "12.38.0",
+    "pixi-filters": "6.1.5",
+    "pixi.js": "8.18.1",
+    "railway": "3.11.0",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11",
+    "web-demuxer": "4.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "esbuild": "0.28.1"
+    }
+  }
+}

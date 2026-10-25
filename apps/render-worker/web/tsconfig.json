@@ -1,0 +1,11 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": [],
+    "paths": { "@/*": ["../../../vendor/openscreen/src/*"] }
+  },
+  "//": "Not part of `pnpm typecheck`. The entry imports vendored source written against upstream's own compiler settings, and type-checking it here would mean either loosening ours or editing theirs. Vite builds this bundle, and the gated render test proves it runs.",
+  "include": ["."]
+}

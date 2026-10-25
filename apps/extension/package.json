@@ -1,0 +1,12 @@
+{
+  "name": "@toru/extension",
+  "version": "0.1.9",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run src"
+  },
+  "license": "MIT"
+}

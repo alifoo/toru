@@ -1,0 +1,26 @@
+import {randomUUID} from 'node:crypto';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {afterEach,expect,it} from 'vitest';
+import {BrandStore} from './brands.js';
+import {openRecorderStore} from './open.js';
+const cleanups:Array<()=>Promise<void>>=[];
+afterEach(async()=>{for(const c of cleanups.splice(0))await c();});
+it('stores validated brands per origin with an account default, isolated per owner',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'brands-'));const db=await openRecorderStore(dir);
+ cleanups.push(async()=>{db.close();await rm(dir,{recursive:true,force:true});});
+ const owner=randomUUID(),store=new BrandStore(db);
+ expect(store.resolve(owner,'https://app.example.com/x')).toBeUndefined();
+ store.save(owner,'*',{accent:'#ff8800',gif:true});
+ store.save(owner,'https://app.example.com/login',{background:'ocean',padding:20,cards:true});
+ expect(store.list(owner).map(b=>b.origin)).toEqual(['*','https://app.example.com']);
+ expect(store.resolve(owner,'https://app.example.com/dash')).toEqual({background:'ocean',padding:20,cards:true});
+ expect(store.resolve(owner,'https://other.example.com')).toEqual({accent:'#ff8800',gif:true});
+ expect(store.resolve(randomUUID(),'https://app.example.com')).toBeUndefined();
+ expect(()=>store.save(owner,'https://app.example.com',{background:'url(https://evil)'})).toThrow();
+ expect(()=>store.save(owner,'https://app.example.com',{logo:'data:image/svg+xml;base64,PHN2Zz4='})).toThrow();
+ expect(()=>store.save(owner,'http://app.example.com',{accent:'#000000'})).toThrow('public_https_url_required');
+ expect(store.remove(owner,'https://app.example.com')).toBe(true);
+ expect(store.resolve(owner,'https://app.example.com')).toEqual({accent:'#ff8800',gif:true});
+});

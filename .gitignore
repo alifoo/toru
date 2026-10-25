@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-web/
+.env*
+!.env.example
+data/
+artifacts/
+*.tsbuildinfo
+.gitnexus/
+.pnpm-store/
+apps/macos/build/
+
+.DS_Store
+.railway/

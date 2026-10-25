@@ -1,0 +1,127 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Toru orb (three.js)</title>
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui;color:#64727d;background:radial-gradient(ellipse at 10% 0%,#d9e9f2,transparent 50%),radial-gradient(ellipse at 95% 100%,#d9ebe3,transparent 45%),#f5f8fa}
+.row{display:flex;gap:56px;align-items:end}.row div{display:grid;justify-items:center;gap:10px;font-size:13px}
+canvas{display:block}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"}}</script>
+</head><body>
+<div class="row"><div><span id="a"></span>160px</div><div><span id="b"></span>64px</div><div><span id="c"></span>32px</div></div>
+<script type="module">
+import * as THREE from 'three';
+// A studio environment in the icon's palette: bright sky, a pale horizon band with a dark line under it, a soft
+// grey floor, and one large softbox. On a mirror sphere these become the icon's highlight and rings.
+const BLUR = Number(new URLSearchParams(location.search).get('blur') ?? 4);
+const CAL_LO = Number(new URLSearchParams(location.search).get('lo') ?? .1) * Math.PI, CAL_HI = Number(new URLSearchParams(location.search).get('hi') ?? .9) * Math.PI;
+const MX = Number(new URLSearchParams(location.search).get('mx') ?? 1);
+const ROUGH = Number(new URLSearchParams(location.search).get('rough') ?? .08);
+function studio() {
+  // The environment is derived from the static icon, so that at rest the mirror sphere shows exactly the icon. For each
+  // direction d of the world, the sphere reflects it toward the camera where its normal is the half-vector of d and
+  // the view direction; that point of the image gets the icon's gradient colour there.
+  const W = 1024, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), img = g.createImageData(W, H);
+  const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const stops = [[0,'#ffffff'],[.22,'#ebf5f7'],[.48,'#90a9b5'],[.53,'#f9ffff'],[.59,'#647e8b'],[.69,'#e9f2f7'],[.74,'#ffffff'],[1,'#a5b8c2']].map(([o, h]) => [o, hex(h)]);
+  const icon = (nx, ny) => {
+    // The icon's radialGradient: centre (.35, .25) of the lens's box, radius .99 of it, padded past the last stop.
+    const bx = (nx + 1) / 2, by = (1 - ny) / 2;
+    const t = Math.min(1, Math.hypot(bx - .35, by - .25) / .99);
+    let k = 1; while (k < stops.length - 1 && stops[k][0] < t) k++;
+    const [o0, c0] = stops[k - 1], [o1, c1] = stops[k], f = o1 > o0 ? Math.min(1, Math.max(0, (t - o0) / (o1 - o0))) : 0;
+    return c0.map((v, i) => v + (c1[i] - v) * f);
+  };
+  // Where a point of the icon's image reflects to, in world directions (orthographic view along +z, x mirrored as
+  // the equirect map is).
+  const reflect = (bx, by) => {
+    const nx = 2 * bx - 1, ny = 1 - 2 * by, r2 = nx * nx + ny * ny;
+    if (r2 >= 1) return null;
+    const nz = Math.sqrt(1 - r2);
+    return [MX * 2 * nz * nx, 2 * nz * ny, 2 * nz * nz - 1];
+  };
+  // The light: the direction that reflects at the icon's gradient centre. Its rings become cones around it, so the
+  // pattern has no pinch anywhere and turns cleanly; each cone's angle is calibrated from the icon (mean angle of the
+  // image points at that gradient distance).
+  const L = reflect(.35, .25);
+  const table = [];
+  for (let k = 0; k <= 80; k++) {
+    const t = k / 80; let sum = 0, n = 0;
+    for (let a = 0; a < 64; a++) {
+      const ang = CAL_LO + a / 64 * (CAL_HI - CAL_LO), bx = .35 + t * .99 * Math.cos(ang), by = .25 + t * .99 * Math.sin(ang);
+      const r = reflect(bx, by); if (!r || (2 * bx - 1) ** 2 + (1 - 2 * by) ** 2 > .97) continue;
+      sum += Math.acos(Math.max(-1, Math.min(1, r[0] * L[0] + r[1] * L[1] + r[2] * L[2]))); n++;
+    }
+    if (n) table.push([sum / n, t]);
+  }
+  for (let i = 1; i < table.length; i++) table[i][0] = Math.max(table[i][0], table[i - 1][0] + 1e-6);
+  const tFor = theta => {
+    if (theta >= table.at(-1)[0]) return Math.min(1, table.at(-1)[1] + (theta - table.at(-1)[0]) / Math.PI);
+    let i = 1; while (table[i][0] < theta) i++;
+    const [a0, t0] = table[i - 1], [a1, t1] = table[i];
+    return t0 + (t1 - t0) * (theta - a0) / (a1 - a0);
+  };
+  const colourAt = t => {
+    let k = 1; while (k < stops.length - 1 && stops[k][0] < t) k++;
+    const [o0, c0] = stops[k - 1], [o1, c1] = stops[k], f = o1 > o0 ? Math.min(1, Math.max(0, (t - o0) / (o1 - o0))) : 0;
+    return c0.map((v, i) => v + (c1[i] - v) * f);
+  };
+  for (let py = 0; py < H; py++) {
+    const lat = (.5 - (py + .5) / H) * Math.PI;
+    for (let px = 0; px < W; px++) {
+      const phi = ((px + .5) / W - .5) * 2 * Math.PI;
+      const dx = Math.cos(phi) * Math.cos(lat), dy = Math.sin(lat), dz = Math.sin(phi) * Math.cos(lat);
+      const theta = Math.acos(Math.max(-1, Math.min(1, dx * L[0] + dy * L[1] + dz * L[2])));
+      const col = colourAt(tFor(theta));
+      const i = (py * W + px) * 4; img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2]; img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const soft = document.createElement('canvas'); soft.width = W; soft.height = H;
+  const sg2 = soft.getContext('2d'); sg2.filter = `blur(${BLUR}px)`;
+  sg2.drawImage(c, 0, -20, W, H + 40);
+  const t = new THREE.CanvasTexture(soft); t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function orb(host, size) {
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(new URLSearchParams(location.search).has('bare') ? 1 : Math.min(2, devicePixelRatio)); renderer.setSize(size, size * 1.12);
+  renderer.toneMapping = THREE.NoToneMapping; renderer.toneMappingExposure = Number(new URLSearchParams(location.search).get('ex') ?? 1.25);
+  host.replaceWith(renderer.domElement);
+  const scene = new THREE.Scene(); scene.environment = studio();
+  const camera = new THREE.PerspectiveCamera(22, 1 / 1.12, .1, 20); camera.position.set(0, .05, 6.6);
+  const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64),
+    new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 1, roughness: ROUGH }));
+  sphere.position.y = .1; scene.add(sphere); 
+  // White rim, like the icon's stroke.
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(1.005, .022, 16, 128), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  rim.position.copy(sphere.position); if (!new URLSearchParams(location.search).has('norim')) scene.add(rim);
+  // Soft contact shadow.
+  const sc = document.createElement('canvas'); sc.width = sc.height = 128; const sg = sc.getContext('2d');
+  const sr = sg.createRadialGradient(64, 64, 0, 64, 64, 64); sr.addColorStop(0, 'rgba(42,73,83,.35)'); sr.addColorStop(1, 'rgba(42,73,83,0)');
+  sg.fillStyle = sr; sg.fillRect(0, 0, 128, 128);
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.9, .32), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc), transparent: true, depthWrite: false }));
+  shadow.position.set(0, -1.02, 0); if (!new URLSearchParams(location.search).has('norim') && !new URLSearchParams(location.search).has('noshadow')) scene.add(shadow);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const turnMs = 2600;
+  const q = new URLSearchParams(location.search); const TILT_X = 0, TILT_Z = 0, SPIN0 = 0;
+  const draw = phase => { scene.environmentRotation.set(TILT_X, SPIN0 + phase * Math.PI * 2, TILT_Z, 'ZXY'); renderer.render(scene, camera); };
+  if (q.has('p')) { draw(Number(q.get('p'))); return; }
+  if (q.has('dump')) {
+    // Every frame of one eased turn, as PNG data URLs in the page, for the offline WebP build (headless --dump-dom).
+    const n = Number(q.get('dump')), out = document.createElement('pre'); out.id = 'frames';
+    for (let i = 0; i < n; i++) { const p = i / n; draw(q.has('linear') ? p : p - Math.sin(2 * Math.PI * p) / (2 * Math.PI)); out.append(renderer.domElement.toDataURL('image/png') + '\n'); }
+    document.body.append(out); return;
+  }
+  draw(0);
+  renderer.setAnimationLoop(now => {
+    // The light turns around the vertical axis; the sphere, rim and shadow stay put.
+    // The pole leans toward the camera and up-left (the icon's highlight); the turn spins it around the vertical axis.
+    const spin = reduce ? 0 : (now % turnMs) / turnMs * Math.PI * 2;
+    scene.environmentRotation.set(TILT_X, SPIN0 + spin, TILT_Z, 'ZXY');
+    renderer.render(scene, camera);
+  });
+}
+if (new URLSearchParams(location.search).has('bare')) { document.body.style.cssText = 'margin:0;background:transparent;min-height:0;display:block'; document.querySelector('.row').innerHTML = '<span id=a></span>'; orb(document.getElementById('a'), Number(new URLSearchParams(location.search).get('size') ?? 192)); }
+else if (new URLSearchParams(location.search).has('only')) { document.querySelector('.row').innerHTML = '<span id=a></span>'; orb(document.getElementById('a'), 160); }
+else { orb(document.getElementById('a'), 160); orb(document.getElementById('b'), 64); orb(document.getElementById('c'), 32); }
+</script></body></html>

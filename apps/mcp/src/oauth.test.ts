@@ -1,0 +1,56 @@
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {afterEach,expect,it} from 'vitest';
+import {oauthConnectionState,authenticateOAuth,dashboardArtifactLease,type McpOAuth} from './oauth.js';
+import {authenticateBearer,activeInviteForOwner} from './auth.js';
+import {withRecorderStore} from './store/open.js';
+import {createInvite,revokeInvites} from './invites.js';
+
+const dirs:string[]=[];
+afterEach(async()=>{await Promise.all(dirs.splice(0).map(p=>rm(p,{recursive:true,force:true})));});
+it('OAuth grants never bypass provider validation, coexist with manual tokens and respect account deletion',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'toru-oauth-'));dirs.push(dir);
+  const owner='11111111-1111-4111-8111-111111111111';
+  let valid=true;
+  const oauth:McpOAuth={authorizationServer:'https://issuer.example',scopes:['openid'],verify:async()=>valid?{owner,expiresAt:Date.now()+3600_000}:undefined};
+  const admit=async()=>withRecorderStore(dir,db=>db.connection.prepare('INSERT INTO accounts(owner,created_at) VALUES (?,?) ON CONFLICT DO NOTHING').run(owner,Date.now()));
+  const grant=await authenticateOAuth('Bearer external',oauth,dir,admit);
+  expect(grant).toBeDefined();expect(await grant!.authorize()).toBe(true);
+  expect(await authenticateBearer('Bearer external',dir)).toBeUndefined();
+  const manual=await createInvite(dir,owner);
+  await revokeInvites(dir,{owner});
+  expect(await authenticateBearer(`Bearer ${manual.token}`,dir)).toBeUndefined();
+  expect(await grant!.authorize()).toBe(true);
+  const dashboard=await dashboardArtifactLease(owner,dir,Date.now()+60_000,'test-signing-secret');
+  expect(dashboard).toBeDefined();
+  expect(await authenticateBearer(`Bearer toru:dashboard-artifacts:${owner}`,dir)).toBeUndefined();
+  valid=false;
+  expect(await authenticateOAuth('Bearer external',oauth,dir,admit)).toBeUndefined();
+  expect(await activeInviteForOwner(owner,grant!.tokenHash,dir)).toBe(false);
+  valid=true;
+  expect(await authenticateOAuth('Bearer refreshed',oauth,dir,admit)).toBeDefined();
+  await withRecorderStore(dir,db=>db.connection.prepare("UPDATE accounts SET admission_status='deleted' WHERE owner=?").run(owner));
+  expect(await dashboardArtifactLease(owner,dir,Date.now()+60_000,'test-signing-secret')).toBeUndefined();
+  expect(await authenticateOAuth('Bearer another-refresh',oauth,dir,admit)).toBeUndefined();
+});
+
+it('disconnect blocks current and refreshed tokens without disabling dashboard playback; reconnect is explicit',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'toru-connections-'));dirs.push(dir);
+  const owner='11111111-1111-4111-8111-111111111111';
+  const other='22222222-2222-4222-8222-222222222222';
+  const admit=async()=>withRecorderStore(dir,db=>db.connection.prepare('INSERT INTO accounts(owner,created_at) VALUES (?,?) ON CONFLICT DO NOTHING').run(owner,Date.now()));
+  await admit();
+  await dashboardArtifactLease(owner,dir,Date.now()+60000,'secret');
+  expect((await oauthConnectionState(owner,dir,'secret')).connected).toBe(false);
+  const oauth:McpOAuth={authorizationServer:'https://issuer.example',scopes:['openid'],verify:async()=>({owner,expiresAt:Date.now()+3600000})};
+  const grant=await authenticateOAuth('Bearer initial',oauth,dir,admit);
+  expect((await oauthConnectionState(owner,dir,'secret')).connected).toBe(true);
+  expect((await oauthConnectionState(other,dir,'secret')).connected).toBe(false);
+  expect((await oauthConnectionState(owner,dir,'secret',false)).blocked).toBe(true);
+  expect(await grant!.authorize()).toBe(false);
+  expect(await authenticateOAuth('Bearer refreshed',oauth,dir,admit)).toBeUndefined();
+  expect(await dashboardArtifactLease(owner,dir,Date.now()+60000,'secret')).toBeDefined();
+  await oauthConnectionState(owner,dir,'secret',true);
+  expect(await authenticateOAuth('Bearer refreshed',oauth,dir,admit)).toBeDefined();
+});

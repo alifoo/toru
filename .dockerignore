@@ -1,0 +1,15 @@
+.git
+**/node_modules
+**/dist
+**/dist-web
+.env*
+**/.env*
+**/.next
+**/*.tsbuildinfo
+data
+artifacts
+**/.gitnexus
+**/.DS_Store
+
+.local-mcp.json
+.pnpm-store

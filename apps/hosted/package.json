@@ -1,0 +1,33 @@
+{
+  "name": "@agent-recorder/hosted",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js",
+    "test": "node --test scripts/*.test.mjs",
+    "monitor": "node scripts/check-operations.mjs",
+    "monitor:deliver": "node scripts/deliver-operations.mjs",
+    "smoke:checkout:test": "node scripts/smoke-stripe-checkout.mjs",
+    "reconcile:checkout": "node dist/reconcile-checkout-cli.js",
+    "reconcile:invoices": "node dist/reconcile-invoices-cli.js",
+    "reconcile:subscriptions": "node dist/reconcile-subscriptions-cli.js",
+    "reconcile:refunds": "node dist/reconcile-refunds-cli.js",
+    "close:billing:test": "node dist/close-billing-cli.js",
+    "close:checkout:test": "node dist/close-checkout-cli.js",
+    "recover:checkout:test": "node dist/recover-checkout-cli.js"
+  },
+  "dependencies": {
+    "@agent-recorder/hosted-policy": "workspace:*",
+    "@agent-recorder/mcp": "workspace:*",
+    "@content-layer/browser": "workspace:*",
+    "@content-layer/render-host": "workspace:*",
+    "railway": "3.11.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0"
+  }
+}

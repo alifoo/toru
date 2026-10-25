@@ -1,0 +1,85 @@
+{
+  "channel": "beta",
+  "minimumMacOS": "15.0",
+  "latest": {
+    "version": "0.4.3",
+    "build": "7",
+    "sha256": "45c901ddf91edb8725f25cd22a701010afe1577a38a1f43c64df3ed061972ca5",
+    "bytes": 2993958,
+    "url": "/downloads/mac/Toru-0.4.3.zip",
+    "publishedAt": "2026-10-16T22:47:41.275Z",
+    "notes": [
+      "The cursor rests on a control for a moment before pressing, and the press is shown when it happens instead of the instant the cursor arrives"
+    ],
+    "edSignature": "Q/2ex9iAF+ETYt8zcZTuB4GZojFhvFEU6RAUkhYBLNM9gBMgw5Lq+ZKiJongmgrik1BDJDyO++cL24GzDuBTDw=="
+  },
+  "releases": [
+    {
+      "version": "0.4.3",
+      "build": "7",
+      "sha256": "45c901ddf91edb8725f25cd22a701010afe1577a38a1f43c64df3ed061972ca5",
+      "bytes": 2993958,
+      "url": "/downloads/mac/Toru-0.4.3.zip",
+      "publishedAt": "2026-10-16T22:47:41.275Z",
+      "notes": [
+        "The cursor rests on a control for a moment before pressing, and the press is shown when it happens instead of the instant the cursor arrives"
+      ],
+      "edSignature": "Q/2ex9iAF+ETYt8zcZTuB4GZojFhvFEU6RAUkhYBLNM9gBMgw5Lq+ZKiJongmgrik1BDJDyO++cL24GzDuBTDw=="
+    },
+    {
+      "version": "0.4.2",
+      "build": "6",
+      "sha256": "7cb1a3343b5d674cf310c5e70f01e581d4d6dee0aa4091cbcf8722d1630fd359",
+      "bytes": 2993863,
+      "url": "/downloads/mac/Toru-0.4.2.zip",
+      "publishedAt": "2026-10-15T05:43:46.780Z",
+      "notes": [
+        "Sharper recordings: captures up to 2560×1440",
+        "The agent can pick the window size (1280×720, 1440×900 or 1920×1080, default 1920×1080) and Toru puts the window back afterwards"
+      ],
+      "edSignature": "nYgtyguJzrrwIZNNhnYrmUcZaq53SWJ5R7FUG5AqnBGZ9BG+AEkfqm6BJg5lUqafO2RJ3Z3qxjY/R98LU5asBQ=="
+    },
+    {
+      "version": "0.4.1",
+      "build": "5",
+      "sha256": "5f92d5c5ab0fe4c6738db4642483f9c8d74316bab05b7cbcacf3805805880e3b",
+      "bytes": 2964160,
+      "url": "/downloads/mac/Toru-0.4.1.zip",
+      "publishedAt": "2026-10-15T04:09:02.657Z",
+      "notes": [
+        "Signed with Developer ID and notarized by Apple: opens with no security warning",
+        "Same recording features as 0.4.0"
+      ],
+      "edSignature": "c831zlN6Uan30WsDS/tO7gpUqSWV4Y6YENKgLuK2OEnxthrVvN0poTuwiGfdYBHqbnz75Xwh0bQnAS+yZ/fNDg=="
+    },
+    {
+      "version": "0.4.0",
+      "build": "4",
+      "sha256": "c067b4adf2f3e827cca982700efa0fdb03f56f1f6141833dbe52af4818c5bc4f",
+      "bytes": 1861829,
+      "url": "/downloads/mac/Toru-0.4.0.zip",
+      "publishedAt": "2026-10-12T16:20:26.960Z",
+      "notarized": false,
+      "notes": [
+        "Recordings keep a margin around the window and are rendered on a light backdrop, so menus that open past the window show whole",
+        "Toru sees open menus and controls apps draw without accessibility labels (Apple Books' Sections menu)",
+        "Code editors (Cursor, VS Code): types into the open document and scrolls web previews",
+        "Typing resumes if another app comes to the front mid-sentence"
+      ]
+    },
+    {
+      "version": "0.3.0",
+      "build": "3",
+      "sha256": "74ff0e604c9cb9156e11eaaeaac447e0f6b3fa9b617d4e9d2175a0a2f7e46e84",
+      "bytes": 1819064,
+      "url": "/downloads/mac/Toru-0.3.0.zip",
+      "publishedAt": "2026-10-11T23:30:00Z",
+      "notarized": false,
+      "notes": [
+        "First public beta build",
+        "Records the window or display you choose, with your approval",
+        "Optional: let your agent operate the shared window during recordings (Settings)"
+      ]
+    }
+  ]
+}

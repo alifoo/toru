@@ -1,0 +1,6 @@
+{
+  "name": "toru", "displayName": "Toru", "description": "Record polished product demo videos with your agent, signed in as you.", "version": "0.3.0",
+  "author": { "name": "Toru" }, "publisher": "Toru", "homepage": "https://toru.tools", "repository": "https://github.com/alifoo/toru-skills", "license": "MIT",
+  "keywords": ["toru", "demo-video", "screen-recording", "mcp", "skills"], "category": "developer-tools", "tags": ["mcp", "skills", "video"],
+  "skills": "./skills/", "mcpServers": "./skills/toru/.mcp.json"
+}

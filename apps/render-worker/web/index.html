@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ContentLayer render host</title>
+  </head>
+  <body>
+    <script>
+      window.renderLoadError = null;
+      addEventListener("error", event => { window.renderLoadError = event.error?.stack || event.message; });
+      addEventListener("unhandledrejection", event => { window.renderLoadError = event.reason?.stack || String(event.reason); });
+    </script>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

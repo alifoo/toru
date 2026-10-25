@@ -1,0 +1,2 @@
+{ "name": "toru-skills", "interface": { "displayName": "Toru Skills" },
+  "plugins": [ { "name": "toru", "source": { "source": "local", "path": "./plugins/toru" }, "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" }, "category": "Productivity" } ] }
