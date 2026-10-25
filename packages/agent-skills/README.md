@@ -1,6 +1,6 @@
 # Toru Agent Skills
 
-Agent skill repository for [Toru](https://toru.tools): your agent investigates your product, writes a step-by-step plan and Toru records a polished demo video of it in one of two places: your own Chrome ([Toru for Chrome](https://toru.tools/chrome)) for web apps, or an app on your Mac ([Toru for Mac](https://toru.tools/mac)). Toru renders the MP4 with cursor motion, zooms and your brand, and checks it before delivery. You are already signed in there, so your passwords never reach Toru or the chat.
+Agent skill repository for [Toru](https://toru.tools), recording infrastructure for your agent: your agent investigates your product, writes a step-by-step plan and records a polished demo video of it through Toru in one of two places: your own Chrome ([Toru for Chrome](https://toru.tools/chrome)) for web apps, or an app on your Mac ([Toru for Mac](https://toru.tools/mac)). Your agent drives the flow; Toru renders the MP4 with cursor motion, zooms and your brand, and checks it before delivery. Toru adds no model of its own. You are already signed in there, so your passwords never reach Toru or the chat.
 
 ## Install
 
@@ -22,7 +22,7 @@ Paste into your agent:
 
 > Record a demo video of https://app.example.com with Toru: create a new project and end on the project dashboard. Give me the MP4.
 
-Your agent reads the code (or the live UI) to write the plan Toru follows: the screens, the exact button and field labels, the values and the final screen. Web apps are recorded in your own signed-in Chrome; the first time, your agent gives you a link to install and pair Toru for Chrome. For a Mac app, name the app.
+Your agent reads the code (or the live UI) to write the plan it then records: the screens, the exact button and field labels, the values and the final screen. Web apps are recorded in your own signed-in Chrome; the first time, your agent gives you a link to install and pair Toru for Chrome. For a Mac app, name the app.
 
 Your video appears in your library at https://toru.tools.
 

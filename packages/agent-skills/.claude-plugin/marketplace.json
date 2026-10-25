@@ -1,8 +1,8 @@
 {
   "name": "toru-skills",
   "owner": { "name": "Toru", "url": "https://toru.tools" },
-  "metadata": { "description": "Official Toru skills for AI agents: record polished product demo videos.", "version": "0.3.0", "repository": "https://github.com/alifoo/toru-skills" },
+  "metadata": { "description": "Official Toru skills for AI agents: record polished product demo videos.", "version": "0.4.0", "repository": "https://github.com/alifoo/toru-skills" },
   "plugins": [
-    { "name": "toru", "source": "./skills/toru", "description": "Record a polished demo video of a web app (in the user's own Chrome) or a Mac app, from a step-by-step plan your agent writes from the product's code.", "strict": false, "skills": ["./"] }
+    { "name": "toru", "source": "./skills/toru", "description": "Recording infrastructure for your agent: record a polished demo of a web app (in the user's own Chrome) or a Mac app. You plan and drive the flow; Toru records, edits and checks the video.", "strict": false, "skills": ["./"] }
   ]
 }
