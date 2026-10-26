@@ -1,7 +1,7 @@
 import type {Metadata} from 'next';
 import {PublicPage} from '../public-landing';
 
-export const metadata:Metadata={title:'Terms of Service · Toru',description:'The terms for using Toru, its plans, credits and refunds.',alternates:{canonical:'https://toru.tools/terms'}};
+export const metadata:Metadata={title:'Terms of Service · Toru',description:'The terms for using Toru: acceptable use, your content, plans, credits and billing, 14-day refunds, liability and account termination.',alternates:{canonical:'https://toru.tools/terms'}};
 
 export default function TermsPage(){
   return <PublicPage>
