@@ -6,7 +6,7 @@ import {PlanCard} from './plan-card';
 import {PublicHeader,PublicFooter} from '../public-landing';
 import {isAppHost,APP_URL} from '../site';
 export async function generateMetadata():Promise<Metadata>{
- return {title:'Pricing · Toru',description:'Free: 10 demos a month. Creator: $19 a month for 50. Studio: $49 for 150. One credit per delivered demo; held-back takes are never charged.',alternates:{canonical:'https://toru.tools/pricing'},...(isAppHost((await headers()).get('host'))?{robots:{index:false,follow:false}}:{})};
+ return {title:'Pricing: Free, Creator and Studio plans · Toru',description:'Free: 10 demos a month. Creator: $19 a month for 50. Studio: $49 for 150. One credit per delivered demo; held-back takes are never charged.',alternates:{canonical:'https://toru.tools/pricing'},...(isAppHost((await headers()).get('host'))?{robots:{index:false,follow:false}}:{})};
 }
 export default async function PricingPage(){
  if(isAppHost((await headers()).get('host')))return <Pricing/>;
