@@ -12,10 +12,43 @@ export default clerkMiddleware(async(_auth,request)=>{
  if(request.headers.get('accept')?.includes('text/markdown')&&isMissingPage(url.pathname))return new NextResponse(
   `# Page not found\n\nThere is no page at \`${url.pathname}\` on Toru.\n\n- [Home](${SITE_URL}/)\n- [Docs](${SITE_URL}/docs)\n- [Sitemap](${SITE_URL}/sitemap.xml)\n- [llms.txt](${SITE_URL}/llms.txt)\n`,
   {status:404,headers:{'Content-Type':'text/markdown; charset=utf-8'}});
+ const home=host!==APP_HOST&&url.pathname==='/';
+ if(home&&request.headers.get('accept')?.includes('text/markdown'))return new NextResponse(HOME_MARKDOWN,{headers:{'Content-Type':'text/markdown; charset=utf-8','Vary':'Accept'}});
  const response=NextResponse.next();
  if(host===APP_HOST)response.headers.set('X-Robots-Tag','noindex, nofollow');
+ if(home)response.headers.set('Vary',[response.headers.get('Vary'),'Accept'].filter(Boolean).join(', '));
  return response;
 });
+/** The homepage for agents that ask for Markdown, in the landing page's own words. */
+const HOME_MARKDOWN=`# Recording infrastructure for your agent.
+
+Your coding agent records your product demos itself: launch clips, changelog GIFs, help-center guides and bug repros. Toru is its camera, editor and brand kit, and checks every take.
+
+10 free demos a month · No card required · Open source, MIT
+
+## What your agent can record for you
+
+- **Launch videos**: a polished walkthrough for Product Hunt, your landing page or the announcement post.
+- **Changelog clips**: a short clip or GIF for every feature you merge, in the release notes the same day.
+- **Help-center guides**: docs that show the real screen and stay current: run the same prompt again when the UI changes.
+- **Sales and onboarding demos**: the exact flow a prospect asked about, without booking a screen share.
+- **Bug reports**: a video of the bug on the issue, so whoever picks it up sees it before reading a line.
+- **Social posts**: short clips for X and LinkedIn, cut tight and in your brand.
+
+## Connected in five minutes
+
+Works inside the agent you already use: Claude Code, Claude, Cursor, Codex and any MCP client. Pick your agent and paste the commands. Then pair [Toru for Chrome](${SITE_URL}/chrome) or [Toru for Mac](${SITE_URL}/mac) from the one link your agent sends you.
+
+## Pay only for demos that pass
+
+Free includes 10 credits each month. Creator costs US$19 per month for 50 credits and Studio US$49 per month for 150. A credit is used only when a video passes the check. [Compare the plans](${SITE_URL}/pricing).
+
+## More
+
+- [Start free](${APP_URL})
+- [Docs](${SITE_URL}/docs)
+- [llms.txt](${SITE_URL}/llms.txt)
+`;
 /** The hosted MCP server, declared where agents look for it. Name and version match the recorder's `McpServer`. */
 const MCP_URL=new URL('/mcp',process.env.NEXT_PUBLIC_RECORDER_URL??'https://mcp.toru.tools').href;
 const SERVER_CARD={name:'toru',title:'Toru',version:'0.1.0',description:'Recording infrastructure for agents: records product flows in your own Chrome or on your Mac and returns an MP4 and a GIF.',websiteUrl:SITE_URL,remotes:[{type:'streamable-http',url:MCP_URL}]};
