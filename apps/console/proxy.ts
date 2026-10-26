@@ -20,6 +20,7 @@ export default clerkMiddleware(async(_auth,request)=>{
  const response=NextResponse.next();
  if(host===APP_HOST)response.headers.set('X-Robots-Tag','noindex, nofollow');
  if(home)response.headers.set('Vary',[response.headers.get('Vary'),'Accept'].filter(Boolean).join(', '));
+ if(home)response.headers.set('Link','</sitemap.xml>; rel="sitemap", </llms.txt>; rel="describedby", </index.md>; rel="alternate"; type="text/markdown"');
  return response;
 });
 /** The homepage for agents that ask for Markdown, in the landing page's own words. */
