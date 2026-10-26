@@ -1,6 +1,7 @@
 import {clerkMiddleware} from '@clerk/nextjs/server';
 import {NextResponse} from 'next/server';
 import {APP_HOST,APP_URL,SITE_HOST,SITE_URL} from './app/site';
+import {plans} from './app/pricing/plans';
 export default clerkMiddleware(async(_auth,request)=>{
  const url=request.nextUrl,host=url.hostname;
  if(host==='www.'+SITE_HOST)return NextResponse.redirect(new URL(url.pathname+url.search,SITE_URL),308);
@@ -9,6 +10,7 @@ export default clerkMiddleware(async(_auth,request)=>{
  if(host===APP_HOST&&['/docs','/companion','/legal','/llms.txt','/sitemap.xml'].includes(url.pathname))return NextResponse.redirect(new URL(url.pathname+url.search,SITE_URL),308);
  if(url.pathname==='/.well-known/mcp/server-card.json')return NextResponse.json(SERVER_CARD,{headers:{'Access-Control-Allow-Origin':'*'}});
  if(url.pathname==='/.well-known/ard.json')return NextResponse.json({mcpServers:[{name:SERVER_CARD.name,url:MCP_URL,transport:'streamable-http',serverCard:SITE_URL+'/.well-known/mcp/server-card.json'}]},{headers:{'Access-Control-Allow-Origin':'*'}});
+ if(url.pathname==='/pricing.md')return new NextResponse(PRICING_MARKDOWN,{headers:{'Content-Type':'text/markdown; charset=utf-8'}});
  if(request.headers.get('accept')?.includes('text/markdown')&&isMissingPage(url.pathname))return new NextResponse(
   `# Page not found\n\nThere is no page at \`${url.pathname}\` on Toru.\n\n- [Home](${SITE_URL}/)\n- [Docs](${SITE_URL}/docs)\n- [Sitemap](${SITE_URL}/sitemap.xml)\n- [llms.txt](${SITE_URL}/llms.txt)\n`,
   {status:404,headers:{'Content-Type':'text/markdown; charset=utf-8'}});
@@ -48,6 +50,30 @@ Free includes 10 credits each month. Creator costs US$19 per month for 50 credit
 - [Start free](${APP_URL})
 - [Docs](${SITE_URL}/docs)
 - [llms.txt](${SITE_URL}/llms.txt)
+`;
+/** The pricing page for agents, built from the same plans as /pricing. */
+const PRICING_MARKDOWN=`# Toru pricing
+
+Recording infrastructure for your agent. Start free, upgrade when you need more. Prices in USD, billed monthly. 1 credit = 1 delivered video that passed the check.
+
+${plans.map(plan=>`## ${plan.name}
+
+- Price: US$${plan.price} per month (USD, billed monthly)
+- ${plan.use}
+- ${plan.credits} credits per month
+- Up to ${plan.minutes} minutes per capture
+- ${plan.days} days of MP4 storage
+`).join('\n')}
+## Included in every plan
+
+- One-prompt demos
+- Delivery check before charging
+- Brand per product
+- MP4 and GIF
+- Sign-in without sharing passwords
+- Claude, Cursor, Codex via MCP
+
+Cancel renewal anytime. Paid plans include a [14-day refund policy](${SITE_URL}/terms#refunds). [Compare the plans](${SITE_URL}/pricing).
 `;
 /** The hosted MCP server, declared where agents look for it. Name and version match the recorder's `McpServer`. */
 const MCP_URL=new URL('/mcp',process.env.NEXT_PUBLIC_RECORDER_URL??'https://mcp.toru.tools').href;
