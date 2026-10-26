@@ -1,7 +1,7 @@
 import type {Metadata} from 'next';
 import {PublicPage} from '../public-landing';
 
-export const metadata:Metadata={title:'Privacy Policy · Toru',description:'What Toru collects, why, who processes it, how long it is kept and your rights.',alternates:{canonical:'https://toru.tools/privacy'}};
+export const metadata:Metadata={title:'Privacy Policy: what Toru collects and why',description:'What Toru collects, why, who processes it, how long it is kept and your rights.',alternates:{canonical:'https://toru.tools/privacy'}};
 
 export default function PrivacyPage(){
   return <PublicPage>

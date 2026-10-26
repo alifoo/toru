@@ -1,7 +1,7 @@
 import type {Metadata} from 'next';
 import {PublicPage} from '../public-landing';
 import {macRelease} from '../../lib/mac-release';
-export const metadata:Metadata={title:'Toru for Mac',description:'Record a window or display on your Mac. Your agent renders and delivers the video.',alternates:{canonical:'https://toru.tools/mac'}};
+export const metadata:Metadata={title:'Toru for Mac: record a window or display',description:'Record a window or display on your Mac. Your agent renders and delivers the video.',alternates:{canonical:'https://toru.tools/mac'}};
 export default function MacPage(){
  const {latest,releases,minimumMacOS,channel}=macRelease();
  return <PublicPage>
