@@ -9,7 +9,7 @@ export default clerkMiddleware(async(_auth,request)=>{
  if(host===SITE_HOST&&url.pathname==='/'&&url.searchParams.has('billing'))return NextResponse.redirect(new URL('/'+url.search+'#settings',APP_URL));
  if(host===APP_HOST&&['/docs','/companion','/legal','/llms.txt','/sitemap.xml'].includes(url.pathname))return NextResponse.redirect(new URL(url.pathname+url.search,SITE_URL),308);
  if(url.pathname==='/.well-known/mcp/server-card.json')return NextResponse.json(SERVER_CARD,{headers:{'Access-Control-Allow-Origin':'*'}});
- if(url.pathname==='/.well-known/ard.json')return NextResponse.json({mcpServers:[{name:SERVER_CARD.name,url:MCP_URL,transport:'streamable-http',serverCard:SITE_URL+'/.well-known/mcp/server-card.json'}]},{headers:{'Access-Control-Allow-Origin':'*'}});
+ if(url.pathname==='/.well-known/ard.json')return NextResponse.json({entries:[ARD_ENTRY],mcpServers:[{name:SERVER_CARD.name,url:MCP_URL,transport:'streamable-http',serverCard:SITE_URL+'/.well-known/mcp/server-card.json'}]},{headers:{'Access-Control-Allow-Origin':'*'}});
  if(url.pathname==='/pricing.md')return new NextResponse(PRICING_MARKDOWN,{headers:{'Content-Type':'text/markdown; charset=utf-8'}});
  if(request.headers.get('accept')?.includes('text/markdown')&&isMissingPage(url.pathname))return new NextResponse(
   `# Page not found\n\nThere is no page at \`${url.pathname}\` on Toru.\n\n- [Home](${SITE_URL}/)\n- [Docs](${SITE_URL}/docs)\n- [Sitemap](${SITE_URL}/sitemap.xml)\n- [llms.txt](${SITE_URL}/llms.txt)\n`,
@@ -78,6 +78,13 @@ Cancel renewal anytime. Paid plans include a [14-day refund policy](${SITE_URL}/
 /** The hosted MCP server, declared where agents look for it. Name and version match the recorder's `McpServer`. */
 const MCP_URL=new URL('/mcp',process.env.NEXT_PUBLIC_RECORDER_URL??'https://mcp.toru.tools').href;
 const SERVER_CARD={name:'toru',title:'Toru',version:'0.1.0',description:'Recording infrastructure for agents: records product flows in your own Chrome or on your Mac and returns an MP4 and a GIF.',websiteUrl:SITE_URL,remotes:[{type:'streamable-http',url:MCP_URL}]};
+/** The same server as an agent catalog entry, with queries an agent would bring to it. */
+const ARD_ENTRY={id:'urn:air:'+SITE_HOST+':mcp:toru',displayName:SERVER_CARD.title,type:'mcp',url:MCP_URL,description:SERVER_CARD.description,serverCard:SITE_URL+'/.well-known/mcp/server-card.json',representativeQueries:[
+ 'Record a demo video of this product flow',
+ 'Make a changelog GIF of the feature I just merged',
+ 'Record a bug repro video for this issue',
+ 'Record a walkthrough of my Mac app',
+]};
 /** Routes the app serves; files (a dot in the last segment), APIs and auth pages fall through to Next. */
 const PAGES=['/','/chrome','/companion','/docs','/legal','/mac','/mac/setup','/onboarding','/pricing','/privacy','/terms','/studio-preview','/studio-preview/landing','/studio-preview/onboarding'];
 function isMissingPage(pathname:string){
