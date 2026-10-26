@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import "./styles.css";
 
 export const metadata: Metadata = {
- metadataBase:new URL('https://toru.tools'),title:'Toru — Your agent records your product demos',description:'A recording tool your AI agent uses on its own. Ask Claude Code, Claude, Cursor or Codex for a demo; it is recorded in your own Chrome or on your Mac while you ship.',
+ metadataBase:new URL('https://toru.tools'),title:'Your agent records your product demos · Toru',description:'A recording tool your AI agent uses on its own. Ask Claude Code, Claude, Cursor or Codex for a demo; it is recorded in your own Chrome or on your Mac while you ship.',
  openGraph:{type:'website',siteName:'Toru',title:'Toru — Your agent records your product demos',description:'Your agent records your product demos: launch videos, changelog clips, onboarding walkthroughs. Described once, done while you ship.',images:[{url:'/og.png',width:1200,height:630,alt:'Toru: your agent records your product demos, shown beside a Toru recording of Linear'}]},
  twitter:{card:'summary_large_image',title:'Toru — Your agent records your product demos',description:'Your agent records your product demos. Described once, done while you ship.',images:['/og.png']},
  robots:{index:true,follow:true,'max-image-preview':'large'},
