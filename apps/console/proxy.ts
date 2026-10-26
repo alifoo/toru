@@ -10,6 +10,7 @@ export default clerkMiddleware(async(_auth,request)=>{
  if(host===APP_HOST&&['/docs','/companion','/legal','/llms.txt','/sitemap.xml'].includes(url.pathname))return NextResponse.redirect(new URL(url.pathname+url.search,SITE_URL),308);
  if(url.pathname==='/.well-known/mcp/server-card.json')return NextResponse.json(SERVER_CARD,{headers:{'Access-Control-Allow-Origin':'*'}});
  if(url.pathname==='/.well-known/ard.json')return NextResponse.json({entries:[ARD_ENTRY],mcpServers:[{name:SERVER_CARD.name,url:MCP_URL,transport:'streamable-http',serverCard:SITE_URL+'/.well-known/mcp/server-card.json'}]},{headers:{'Access-Control-Allow-Origin':'*'}});
+ if(host!==APP_HOST&&url.pathname==='/index.md')return new NextResponse(HOME_MARKDOWN,{headers:{'Content-Type':'text/markdown; charset=utf-8'}});
  if(url.pathname==='/pricing.md')return new NextResponse(PRICING_MARKDOWN,{headers:{'Content-Type':'text/markdown; charset=utf-8'}});
  if(request.headers.get('accept')?.includes('text/markdown')&&isMissingPage(url.pathname))return new NextResponse(
   `# Page not found\n\nThere is no page at \`${url.pathname}\` on Toru.\n\n- [Home](${SITE_URL}/)\n- [Docs](${SITE_URL}/docs)\n- [Sitemap](${SITE_URL}/sitemap.xml)\n- [llms.txt](${SITE_URL}/llms.txt)\n`,
