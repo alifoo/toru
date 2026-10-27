@@ -27,3 +27,10 @@ it('rejects videos that are too short and skips files ffmpeg cannot read', async
   const garbage = await assessDemo(join(dir, 'garbage.mp4'), undefined);
   expect(garbage).toMatchObject({ passed: true, skipped: true, reasons: ['unassessable'] });
 });
+it('holds a directed demo whose camera pumps, and leaves the legacy camera alone', async () => {
+  const pumping = { zoomRegions: [{ startMs: 500, endMs: 1_200 }, { startMs: 2_000, endMs: 2_800 }] };
+  const directed = await assessDemo(join(dir, 'moving.mp4'), { semanticTimeline: [], pointerTrail: [], directed: true }, pumping);
+  expect(directed).toMatchObject({ passed: false, reasons: ['zoom_pumping'] });
+  const legacy = await assessDemo(join(dir, 'moving.mp4'), { semanticTimeline: [], pointerTrail: [] }, pumping);
+  expect(legacy.passed).toBe(true);
+});

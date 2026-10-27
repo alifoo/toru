@@ -14,6 +14,7 @@ import {
   WebDriverBrowserDriver,
   type WebDriverTransport,
   opensNewShot,
+  containerFrom,
 } from "./webdriver.js";
 
 const elementKey = "element-6066-11e4-a52e-4f735466cecf";
@@ -1682,5 +1683,18 @@ describe("new shot hold", () => {
   it("presses at once inside the current shot", () => {
     // The next field of the same form, a second later: the camera is already there.
     expect(opensNewShot({ x: 700, y: 400, atMs: 9_000 }, { x: 760, y: 470 }, viewport, 10_000)).toBe(false);
+  });
+});
+
+describe("click panel", () => {
+  it("keeps the panel around the target as viewport fractions", () => {
+    expect(containerFrom({ x: 0.18, y: 0.2, w: 0.44, h: 0.3 })).toEqual({ container: { x: 0.18, y: 0.2, width: 0.44, height: 0.3 } });
+  });
+
+  it("drops a missing, empty or off-screen panel", () => {
+    expect(containerFrom(null)).toBeUndefined();
+    expect(containerFrom({ x: 0.1, y: 0.1, w: 0, h: 0.2 })).toBeUndefined();
+    expect(containerFrom({ x: 1.2, y: 0.1, w: 0.2, h: 0.2 })).toBeUndefined();
+    expect(containerFrom({ x: "a", y: 0.1, w: 0.2, h: 0.2 })).toBeUndefined();
   });
 });

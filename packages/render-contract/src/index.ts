@@ -922,13 +922,17 @@ export function proposeZoomRegions(
   directedCap = 1.6,
 ): ProposedZoomRegion[] {
   const ordered = [...pointers].sort((left, right) => left.atMs - right.atMs);
-  const shots = groupIntoShots(ordered, removable);
+  // A directed demo never zooms on a click that only moves the flow on ("Próximo", a link to the next page), and the
+  // screen it leads to starts a shot of its own.
+  const moving = directed ? ordered.filter(pointer => movesFlowOn(pointer, semanticTimeline)) : [];
+  const shots = groupIntoShots(ordered, removable, moving.map(pointer => pointer.atMs));
   const regions: ProposedZoomRegion[] = [];
 
   for (const shot of shots) {
     const first = shot[0];
     const last = shot[shot.length - 1];
     if (!first || !last) continue;
+    if (shot.every(pointer => moving.includes(pointer))) continue;
     /**
      * Every region begins before its opening click, the first one included, so the camera has arrived when the
      * press lands — the approach a viewer follows. When the driver's path shows where the travel began, the region
@@ -951,7 +955,7 @@ export function proposeZoomRegions(
 
     // The shot frames everything it covers, not the last thing clicked: a run of clicks around one
     // panel wants that panel held in view, and pulling in on the final chip would lose the rest.
-    const covered = boxAround(shot);
+    const covered = (shot.length > 1 ? sharedPanel(shot) : undefined) ?? boxAround(shot);
     const previous = regions[regions.length - 1];
     // Adjacent regions are clipped rather than overlapped, so the camera finishes one move before
     // beginning the next.
@@ -1002,6 +1006,9 @@ export function proposeZoomRegions(
     for (const region of regions) {
       const boundary = navigations.find(moment => moment.atMs > region.startMs && moment.atMs < region.endMs + 1_000);
       if (boundary) region.endMs = Math.min(region.endMs, Math.max(region.startMs, boundary.atMs - 1_000));
+      // The camera is back out and still when the flow moves on, so the step button is pressed in a wide shot.
+      const step = moving.find(pointer => pointer.atMs > region.startMs && pointer.atMs < region.endMs + cameraReleaseMs + 400);
+      if (step) region.endMs = Math.min(region.endMs, Math.max(region.startMs, step.atMs - cameraReleaseMs - 400));
     }
     const last = [...semanticTimeline].sort((a, b) => a.atMs - b.atMs).at(-1);
     if (last?.type === "result") {
@@ -1014,7 +1021,55 @@ export function proposeZoomRegions(
   }
   // A zoom cut down to a moment (a click that navigates at once) only twitches the camera in and straight back out.
   const shortest = directed ? minimumShotMs : 0;
-  return regions.filter(region => region.endMs - region.startMs > shortest || region.intent === "result");
+  const lasting = regions.filter(region => region.endMs - region.startMs > shortest || region.intent === "result");
+  return directed ? paceZooms(lasting) : lasting;
+}
+
+/** The labels of clicks that only move a flow on, as the driver describes them ("button Próximo", "link Back ›"). */
+const flowLabel = /(?:^|\s)(?:próximo|proximo|next|voltar|back|anterior|previous|continuar|continue|avançar|avancar|seguir)(?:\s*[›»>→←‹«<])?$/iu;
+/** A page change this soon after a click means the click was the way there. */
+const navigationFollowMs = 1_500;
+
+/** Whether a click only moves the flow on: it is labelled as a step button, or the page changes right after it. */
+export function movesFlowOn(pointer: CapturePointer, timeline: readonly CaptureSemanticAction[]): boolean {
+  return timeline.some(moment =>
+    (moment.type === "navigate" && moment.atMs > pointer.atMs && moment.atMs - pointer.atMs <= navigationFollowMs)
+    || (moment.endMs === undefined && moment.type !== "result" && Math.abs(moment.atMs - pointer.atMs) <= 300
+      && flowLabel.test(moment.element.trim())));
+}
+
+/**
+ * The most zooms a minute of demo carries, and the open shot kept between two of them.
+ *
+ * More than about four a minute, or a camera that comes out for less than two seconds before going back in, reads as
+ * pumping (docs/gestos-humanos.md, rule 5). Typing and the result are never dropped: they are what the zoom is for.
+ */
+const zoomsPerMinute = 4;
+const openBetweenZoomsMs = 2_000;
+
+function paceZooms(regions: readonly ProposedZoomRegion[]): ProposedZoomRegion[] {
+  const kept: ProposedZoomRegion[] = [];
+  const essential = (region: ProposedZoomRegion) => region.intent === "result" || region.intent === "type";
+  for (const candidate of [...regions].sort((a, b) => a.startMs - b.startMs)) {
+    const region = { ...candidate };
+    const previous = kept[kept.length - 1];
+    const gap = previous ? region.startMs - previous.endMs : Infinity;
+    if (previous && gap > 0 && gap < openBetweenZoomsMs) {
+      // Close by, the camera holds through the gap instead of coming out and back. Elsewhere, one of the two goes.
+      const reach = 0.5 / Math.min(previous.customScale, region.customScale);
+      if (Math.hypot(region.focus.cx - previous.focus.cx, region.focus.cy - previous.focus.cy) <= reach) {
+        previous.endMs = region.startMs;
+      } else if (!essential(region)) {
+        continue;
+      } else if (!essential(previous)) {
+        kept.pop();
+      }
+    }
+    const recent = kept.filter(other => other.startMs > region.startMs - 60_000).length;
+    if (recent >= zoomsPerMinute && !essential(region)) continue;
+    kept.push(region);
+  }
+  return kept;
 }
 
 function semanticActionFor(
@@ -1060,22 +1115,45 @@ function semanticActionFor(
  * would mean not being zoomed in at all — or when so much time has passed that holding the zoom
  * through the gap would be holding it over nothing.
  */
-function groupIntoShots(ordered: readonly CapturePointer[], removable: readonly TimeRange[] = []): CapturePointer[][] {
+function groupIntoShots(
+  ordered: readonly CapturePointer[],
+  removable: readonly TimeRange[] = [],
+  breaks: readonly number[] = [],
+): CapturePointer[][] {
   const shots: CapturePointer[][] = [];
   for (const pointer of ordered) {
     const current = shots[shots.length - 1];
     const previous = current?.[current.length - 1];
+    // Clicks inside one panel (a card, a form, a filter list) are one place to a viewer, however far apart.
+    const samePanel = previous !== undefined && sharedPanel([...current!, pointer]) !== undefined;
     const elsewhere =
-      previous !== undefined &&
+      previous !== undefined && !samePanel &&
       Math.hypot(pointer.x - previous.x, pointer.y - previous.y) > sameShotRadius;
     // Measured as the viewer sees it: a wait that is cut from the video does not pull the camera back out.
     const longAfter = previous !== undefined
       && pointer.atMs - previous.atMs - overlapMs(removable, previous.atMs, pointer.atMs) > sameShotGapMs;
-    const wouldSprawl = current !== undefined && spanOf([...current, pointer]) > maximumShotSpan;
-    if (!current || elsewhere || longAfter || wouldSprawl) shots.push([pointer]);
+    const wouldSprawl = current !== undefined && !samePanel && spanOf([...current, pointer]) > maximumShotSpan;
+    // A click that moved the flow on ends the shot: what follows is another screen.
+    const afterMove = previous !== undefined && breaks.some(atMs => atMs >= previous.atMs && atMs < pointer.atMs);
+    if (!current || elsewhere || longAfter || wouldSprawl || afterMove) shots.push([pointer]);
     else current.push(pointer);
   }
   return shots;
+}
+
+function overlapRatio(a: CropRegion, b: CropRegion): number {
+  const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  if (width <= 0 || height <= 0) return 0;
+  const shared = width * height;
+  return shared / (a.width * a.height + b.width * b.height - shared);
+}
+
+/** The panel every click in a shot sits in, when they share one small enough to zoom on. */
+function sharedPanel(shot: readonly CapturePointer[]): CropRegion | undefined {
+  const panel = shot[0]?.container;
+  if (!panel || Math.max(panel.width, panel.height) > maximumShotSpan) return undefined;
+  return shot.every(pointer => pointer.container && overlapRatio(pointer.container, panel) > 0.7) ? panel : undefined;
 }
 
 /** The larger side of the box covering every target in a shot, as a fraction of the frame. */
@@ -1539,4 +1617,43 @@ export function outputTimeMs(sourceMs: number, edit: EditTimeline): number {
     return total + Math.max(0, inside) * (1 - 1 / range.speed);
   }, 0);
   return Math.round((edit.introMs ?? 0) + at - removed - saved);
+}
+
+/**
+ * What a viewer would see as bad camera work in a directed render, as delivery-check reasons.
+ *
+ * `camera_late`: the camera is still easing in or out when a click lands, so the press is a blur. `zoom_pumping`: it
+ * comes out for less than two seconds before going back in, or zooms more than four times a minute (the result
+ * and typing zooms aside). A field clicked to type into is left out: its typing zoom follows the click on purpose.
+ */
+export function reviewCamera(
+  config: ExporterConfig,
+  observation: Pick<CaptureObservation, "pointerTrail" | "directed"> | undefined,
+): string[] {
+  if (!observation?.directed || !Array.isArray(config.zoomRegions)) return [];
+  const regions = (config.zoomRegions as unknown[])
+    .filter((region): region is { startMs: number; endMs: number; intent?: unknown } =>
+      typeof region === "object" && region !== null
+      && typeof (region as { startMs?: unknown }).startMs === "number" && typeof (region as { endMs?: unknown }).endMs === "number")
+    .sort((a, b) => a.startMs - b.startMs);
+  const reasons: string[] = [];
+  const moves = regions.flatMap(region => [
+    { startMs: region.startMs - cameraLeadMs, endMs: region.startMs },
+    { startMs: region.endMs, endMs: region.endMs + cameraReleaseMs },
+  ]);
+  const late = (observation.pointerTrail ?? []).some(pointer => pointer.shape !== "text"
+    && moves.some(move => move.startMs < pointer.atMs + 100 && move.endMs > pointer.atMs - 250));
+  if (late) reasons.push("camera_late");
+  // Typing and the result are kept whatever the pace, as `paceZooms` keeps them.
+  const essential = (region: { intent?: unknown }) => region.intent === "result" || region.intent === "type";
+  const zooms = regions.filter(region => !essential(region));
+  const outAndBack = regions.some((region, index) => {
+    const previous = regions[index - 1];
+    const gap = previous ? region.startMs - previous.endMs : Infinity;
+    return gap > 0 && gap < openBetweenZoomsMs && !(essential(region) && essential(previous!));
+  });
+  const crowded = zooms.some(region =>
+    zooms.filter(other => other.startMs >= region.startMs && other.startMs < region.startMs + 60_000).length > zoomsPerMinute);
+  if (outAndBack || crowded) reasons.push("zoom_pumping");
+  return reasons;
 }

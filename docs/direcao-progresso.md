@@ -13,11 +13,11 @@ Plano: `docs/plano-direcao-humana-2026-10-27.md` (aprovado em 27/10/2026). Um PR
   - [x] Pesquisa: cinemática do apontar (minimum jerk, submovimentos, reentrada) e guias de screencast/zoom
   - [x] Catálogo `docs/gestos-humanos.md`: parâmetros do movimento, 7 gestos, regras de direção, exemplo da Nock
   - [ ] Medir em demos de referência do fundador (espera a lista dele; não bloqueia a Fase 1b)
-- [ ] **1b · Menos zoom e checagem de entrega** (Fase 1, itens 3 e 4)
-  - [ ] Sem zoom em navegação e trocas de tela
-  - [ ] Grupo pelo contêiner do DOM
-  - [ ] Teto de ~4 zooms/min e 2 s abertos entre zooms
-  - [ ] `qualityReview` reprova câmera em movimento no clique e bombeadas
+- [x] **1b · Menos zoom e checagem de entrega** (Fase 1, itens 3 e 4) · branch `feat/direcao-fase-1b-menos-zoom`
+  - [x] Sem zoom em clique que só avança o fluxo ("Próximo", "Voltar", "Continuar" ou página que muda em até 1,5 s); a tela seguinte abre um grupo novo e a câmera já está aberta e parada quando o botão é clicado (`movesFlowOn`)
+  - [x] Grupo pelo contêiner do DOM: o driver mede o painel em volta do alvo (`CapturePointer.container`) e cliques no mesmo painel (IoU > 0,7) são um enquadramento só, no painel
+  - [x] Teto de 4 zooms/min e 2 s abertos entre zooms; perto, a câmera segura em vez de sair e voltar; digitação e resultado nunca saem (`paceZooms`)
+  - [x] Checagem de entrega: `camera_late` e `zoom_pumping` (`reviewCamera`, usado por `assessDemo` com o config do render); só em demos dirigidas
 - [ ] **2 · Gestos no driver e nas ferramentas**
   - [ ] Percurso humano (curva, sino, passe do alvo, deriva)
   - [ ] `browser_point`, `browser_trace`, `browser_sweep`, `browser_read` (driver, servidor, extensão)
@@ -30,3 +30,4 @@ Plano: `docs/plano-direcao-humana-2026-10-27.md` (aprovado em 27/10/2026). Um PR
 
 - 27/10: etapa 1a pronta (este arquivo criado), PR #18.
 - 27/10: Fase 0 pronta (catálogo).
+- 27/10: etapa 1b pronta (render-contract 107 testes, browser +2).
