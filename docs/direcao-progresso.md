@@ -26,7 +26,11 @@ Plano: `docs/plano-direcao-humana-2026-10-27.md` (aprovado em 27/10/2026). Um PR
   - [x] Extensão antiga ou janela do Mac sem `gesture`: o servidor só aponta o cursor (`pointer move`)
   - [x] Ação semântica `emphasis`: zoom sutil (até 1,6×) do começo do gesto até 1 s depois; nada acima de 25% da tela; nunca cortado pelo ritmo
   - [x] `run-plan.ts` aceita `point`, `trace`, `sweep`, `read` (fora do roteiro do navegador do Toru); o estúdio casa gestos com `emphasis`
-- [ ] **3 · Skill de direção** (toru-skills 0.5.0, `references/direction.md`, `recording-guide.ts`)
+- [x] **3 · Skill de direção** · branch `feat/direcao-fase-3-skill` e alifoo/toru-skills#1
+  - [x] `references/direction.md`: o que o Toru já faz, os 4 gestos, 7 regras, exemplo e a checagem de entrega
+  - [x] `SKILL.md` e `tools.md` 0.5.0 (plano aceita gestos; `camera_late`, `zoom_pumping`), espelhados em `packages/agent-skills`
+  - [x] `recording-guide.ts` e as instruções do servidor mandam dirigir o olhar uma vez por tela, nunca em transição
+  - Ordem de merge: toru-skills#1 só depois de os gestos (#21) estarem em produção
 - [ ] **4 · Avaliação** (banco de 6 fluxos, métricas, nota do fundador; espera aprovação e extensão pronta)
 
 ## Registro
@@ -34,4 +38,5 @@ Plano: `docs/plano-direcao-humana-2026-10-27.md` (aprovado em 27/10/2026). Um PR
 - 27/10: etapa 1a pronta (este arquivo criado), PR #18.
 - 27/10: Fase 0 pronta (catálogo).
 - 27/10: etapa 1b pronta, PR #20 (render-contract 107 testes, browser +2).
-- 27/10: Fase 2 pronta (browser 145, render-contract 110, mcp 277).
+- 27/10: Fase 2 pronta, PR #21 (browser 145, render-contract 110, mcp 277).
+- 27/10: Fase 3 pronta (skill 0.5.0).

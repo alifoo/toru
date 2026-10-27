@@ -1,7 +1,7 @@
 ---
 name: toru
 description: Use Toru to record a polished demo video of a product flow. Use it when the user asks for a demo, walkthrough, feature video, bug reproduction video or GIF of a web app (recorded in the user's own Chrome with Toru for Chrome) or of an app on their Mac (Toru for Mac). Also use it to check a recording, render or re-render it, fetch the MP4 link, or manage paired Chrome browsers and Macs.
-last-updated: 2026-10-24
+last-updated: 2026-10-27
 ---
 
 # Toru
@@ -50,7 +50,7 @@ Connecting Toru authorizes **Toru**, not the user's product. Toru records where 
 }
 ```
 
-- `action`: `click | type | select | press | scroll | wait | navigate`. `value` is what to type, the option to pick, the key to press or the path to open.
+- `action`: `click | type | select | press | scroll | wait | navigate`, plus the gestures `point | trace | sweep | read` (see direction.md). `value` is what to type, the option to pick, the key to press, the path to open, or a trace's shape (`circle`, `underline`).
 - A field typed several times (three tasks into the same input) keeps its values in order.
 - `finalState` is what must be visible at the end; the video ends there.
 - Give the user a short plain-language summary of the plan, not a source dump.
@@ -77,6 +77,7 @@ Toru records in the user's own Chrome or on their Mac, both already signed in as
 4. `recording_run_status {runId}` answers `agent_driving` with `sessionId` and `finalState`: you drive.
    - Follow the plan one action at a time with `browser_click`, `browser_type`, `browser_key`, `browser_select`, `browser_scroll` and `browser_wait` on `sessionId`. Each reply shows the screen and the elements in view; `browser_observe` with `mode: "outline"` lists every element.
    - Every action is in the video: no exploratory clicks while recording.
+   - Direct the viewer's eye: on the screen that proves the flow, emphasize the evidence with one gesture (`browser_point`, `browser_trace` with circle or underline, `browser_sweep`, `browser_read`) before marking the result. Never use a gesture on transition screens ("Next", tabs, menus). See [`references/direction.md`](references/direction.md).
    - When `finalState` is visible: `mark_demo_moment` kind `result` with that screenshot's `observationId`, then `recording_run_finish {runId, outcome: "reached"}`. Toru holds on the result, stops, renders with the brand and checks the take. If the flow cannot be completed: `outcome: "stuck"` (no credit used).
    - Never call `recording_render` on the run's session; the run renders. If your tool list has no `recording_run_finish` (a session started before it existed), `recording_stop` on `sessionId` finishes the run as reached. After 5 minutes without a call on the session the run stops.
 5. Poll `recording_run_status {runId, waitMs: 25000}`:
@@ -90,7 +91,7 @@ Toru records in the user's own Chrome or on their Mac, both already signed in as
 ## Step-by-step path (only when each screen needs your judgement)
 
 1. `session_open {url, localConnectionId, requestId}` on the intended in-app URL in the user's Chrome, then `recording_start`.
-2. Drive one action at a time (`browser_observe`, `browser_click`, `browser_type`, `browser_key`, `browser_scroll`, `browser_move`, `browser_wait`). Inspect each returned screenshot before the next action.
+2. Drive one action at a time (`browser_observe`, `browser_click`, `browser_type`, `browser_key`, `browser_scroll`, `browser_move`, `browser_wait`, and the gestures `browser_point`, `browser_trace`, `browser_sweep`, `browser_read`). Inspect each returned screenshot before the next action.
 3. Mark moments: `mark_demo_moment` with `setup` for unimportant interactions (no zoom), `action` for meaningful ones, and `result` when the requested outcome is visible, using the observationId of the first screenshot showing it. Hold on the result with `browser_wait` (about 4 s), move the cursor away from the evidence, then `recording_stop`.
 4. `recording_render`, then `recording_status` until `completed` (it waits up to 25 s per call), then `recording_links`. The brand saved for the product domain applies automatically; only pass `background`, `padding`, `gif` or `width` for a one-off change.
 
@@ -116,3 +117,4 @@ Weak: `Show the product.` / `Go through onboarding, settings, billing and analyt
 ## References
 
 - [`references/tools.md`](references/tools.md): tool list by route, argument notes and the error codes you will see.
+- [`references/direction.md`](references/direction.md): directing the recording, with the gestures, when to use them, and what the camera and the delivery check do.
