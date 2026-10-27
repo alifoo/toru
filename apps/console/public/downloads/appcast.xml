@@ -4,54 +4,14 @@
   <title>Toru for Mac</title>
   <link>https://toru.tools/mac</link>
   <item>
-   <title>Toru 0.4.3</title>
-   <pubDate>Fri, 16 Oct 2026 22:47:41 GMT</pubDate>
-   <sparkle:version>7</sparkle:version>
-   <sparkle:shortVersionString>0.4.3</sparkle:shortVersionString>
+   <title>Toru 0.4.5</title>
+   <pubDate>Tue, 27 Oct 2026 23:22:09 GMT</pubDate>
+   <sparkle:version>9</sparkle:version>
+   <sparkle:shortVersionString>0.4.5</sparkle:shortVersionString>
    <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
    <sparkle:channel>beta</sparkle:channel>
-   <description><![CDATA[<ul><li>The cursor rests on a control for a moment before pressing, and the press is shown when it happens instead of the instant the cursor arrives</li></ul>]]></description>
-   <enclosure url="https://toru.tools/downloads/mac/Toru-0.4.3.zip" length="2993958" type="application/octet-stream" sparkle:edSignature="Q/2ex9iAF+ETYt8zcZTuB4GZojFhvFEU6RAUkhYBLNM9gBMgw5Lq+ZKiJongmgrik1BDJDyO++cL24GzDuBTDw=="/>
-  </item>
-  <item>
-   <title>Toru 0.4.2</title>
-   <pubDate>Thu, 15 Oct 2026 05:43:46 GMT</pubDate>
-   <sparkle:version>6</sparkle:version>
-   <sparkle:shortVersionString>0.4.2</sparkle:shortVersionString>
-   <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-   <sparkle:channel>beta</sparkle:channel>
-   <description><![CDATA[<ul><li>Sharper recordings: captures up to 2560×1440</li><li>The agent can pick the window size (1280×720, 1440×900 or 1920×1080, default 1920×1080) and Toru puts the window back afterwards</li></ul>]]></description>
-   <enclosure url="https://toru.tools/downloads/mac/Toru-0.4.2.zip" length="2993863" type="application/octet-stream" sparkle:edSignature="nYgtyguJzrrwIZNNhnYrmUcZaq53SWJ5R7FUG5AqnBGZ9BG+AEkfqm6BJg5lUqafO2RJ3Z3qxjY/R98LU5asBQ=="/>
-  </item>
-  <item>
-   <title>Toru 0.4.1</title>
-   <pubDate>Thu, 15 Oct 2026 04:09:02 GMT</pubDate>
-   <sparkle:version>5</sparkle:version>
-   <sparkle:shortVersionString>0.4.1</sparkle:shortVersionString>
-   <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-   <sparkle:channel>beta</sparkle:channel>
-   <description><![CDATA[<ul><li>Signed with Developer ID and notarized by Apple: opens with no security warning</li><li>Same recording features as 0.4.0</li></ul>]]></description>
-   <enclosure url="https://toru.tools/downloads/mac/Toru-0.4.1.zip" length="2964160" type="application/octet-stream" sparkle:edSignature="c831zlN6Uan30WsDS/tO7gpUqSWV4Y6YENKgLuK2OEnxthrVvN0poTuwiGfdYBHqbnz75Xwh0bQnAS+yZ/fNDg=="/>
-  </item>
-  <item>
-   <title>Toru 0.4.0</title>
-   <pubDate>Mon, 12 Oct 2026 16:20:26 GMT</pubDate>
-   <sparkle:version>4</sparkle:version>
-   <sparkle:shortVersionString>0.4.0</sparkle:shortVersionString>
-   <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-   <sparkle:channel>beta</sparkle:channel>
-   <description><![CDATA[<ul><li>Recordings keep a margin around the window and are rendered on a light backdrop, so menus that open past the window show whole</li><li>Toru sees open menus and controls apps draw without accessibility labels (Apple Books' Sections menu)</li><li>Code editors (Cursor, VS Code): types into the open document and scrolls web previews</li><li>Typing resumes if another app comes to the front mid-sentence</li></ul>]]></description>
-   <enclosure url="https://toru.tools/downloads/mac/Toru-0.4.0.zip" length="1861829" type="application/octet-stream"/>
-  </item>
-  <item>
-   <title>Toru 0.3.0</title>
-   <pubDate>Sun, 11 Oct 2026 23:30:00 GMT</pubDate>
-   <sparkle:version>3</sparkle:version>
-   <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
-   <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-   <sparkle:channel>beta</sparkle:channel>
-   <description><![CDATA[<ul><li>First public beta build</li><li>Records the window or display you choose, with your approval</li><li>Optional: let your agent operate the shared window during recordings (Settings)</li></ul>]]></description>
-   <enclosure url="https://toru.tools/downloads/mac/Toru-0.3.0.zip" length="1819064" type="application/octet-stream"/>
+   <description><![CDATA[<ul><li>The cursor moves like a hand: a curved path that slows into the target, with a short correction, and a moment of hesitation before buttons that create or send something</li><li>Gestures: your agent can point at, circle, underline or sweep down a list without clicking, and the camera frames it</li><li>Clicks inside one panel are filmed as one shot instead of zooming in and out</li></ul>]]></description>
+   <enclosure url="https://toru.tools/downloads/mac/Toru-0.4.5.zip" length="3264838" type="application/octet-stream" sparkle:edSignature="RlesYfwEFOsL7Tx2rMAlLv3GwtzU4zNmmkpR6VVW+mOaHacnpFndeeH+AmZpT8KHnNoqh/6a8PNR0jh9N9sQDw=="/>
   </item>
  </channel>
 </rss>
