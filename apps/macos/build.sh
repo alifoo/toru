@@ -24,8 +24,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <key>CFBundleIdentifier</key><string>${TORU_BUNDLE_ID:-tools.toru.mac}</string>
 <key>CFBundleName</key><string>Toru</string>
 <key>CFBundleIconFile</key><string>Toru</string>
-<key>CFBundleVersion</key><string>${TORU_BUILD:-7}</string>
-<key>CFBundleShortVersionString</key><string>${TORU_VERSION:-0.4.3}</string>
+<key>CFBundleVersion</key><string>${TORU_BUILD:-9}</string>
+<key>CFBundleShortVersionString</key><string>${TORU_VERSION:-0.4.5}</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>NSScreenCaptureUsageDescription</key><string>Record the window or display you select, when your connected agent requests it.</string>

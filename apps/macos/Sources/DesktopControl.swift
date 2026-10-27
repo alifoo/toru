@@ -15,7 +15,7 @@ final class DesktopControl: @unchecked Sendable {
     ]
     static var available: Bool { AXIsProcessTrusted() }
     /// The page methods this class answers; the app keeps sharing when one of them fails.
-    static let methods: Set<String> = ["readPage", "pageText", "pointer", "formInput", "typeText", "pressKey", "scrollBy", "redactSensitiveText"]
+    static let methods: Set<String> = ["readPage", "pageText", "pointer", "gesture", "formInput", "typeText", "pressKey", "scrollBy", "redactSensitiveText"]
     /// Asks macOS for the Accessibility permission (opens the system prompt once).
     static func requestPermission() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
@@ -89,7 +89,7 @@ final class DesktopControl: @unchecked Sendable {
     }
 
     func handle(_ method: String, _ args: [Any]) throws -> Any {
-        if ["pointer", "formInput", "typeText", "pressKey", "scrollBy"].contains(method) { bringForward() }
+        if ["pointer", "gesture", "formInput", "typeText", "pressKey", "scrollBy"].contains(method) { bringForward() }
         if ProcessInfo.processInfo.environment["TORU_CONTROL_LOG"] != nil {
             let ref = (args.dropFirst().first as? [String: Any])?["ref"] as? String ?? args.first as? String ?? ""
             let target = snapshot?.targets[ref]
@@ -97,7 +97,7 @@ final class DesktopControl: @unchecked Sendable {
         }
         let result = try lock.withLock { try perform(method, args) }
         // A beat after each visible step, so the video shows its result before the next one starts.
-        if ["pointer", "formInput", "typeText", "pressKey", "scrollBy"].contains(method) { Thread.sleep(forTimeInterval: 0.6) }
+        if ["pointer", "gesture", "formInput", "typeText", "pressKey", "scrollBy"].contains(method) { Thread.sleep(forTimeInterval: 0.6) }
         return result
     }
 
@@ -176,6 +176,24 @@ final class DesktopControl: @unchecked Sendable {
             default: try driver.click(resolved, window: current.window)
             }
             snapshot = nil
+            return NSNull()
+        case "gesture":
+            // point, circle, underline or sweep on a ref or a point in the window (docs/gestos-humanos.md).
+            guard let kind = args.first as? String, ["point", "circle", "underline", "sweep"].contains(kind) else {
+                throw ToruError(message: "local_method_forbidden")
+            }
+            let spec = args.count > 1 ? args[1] as? [String: Any] : nil
+            let rows = (args.count > 2 ? args[2] as? [String: Any] : nil)?["rows"] as? Int ?? 4
+            let current = try snapshot ?? read()
+            if spec?["type"] as? String == "ref" {
+                let (resolved, window) = try target(spec?["ref"])
+                try driver.gesture(kind, resolved, at: nil, window: window, rows: rows)
+            } else if let x = spec?["x"] as? Double, let y = spec?["y"] as? Double {
+                let point = CGPoint(x: current.window.minX + x, y: current.window.minY + y)
+                let hit = current.targets.values.filter { $0.frame.contains(point) && $0.role != "menubaritem" }
+                    .min { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
+                try driver.gesture(kind, hit, at: point, window: current.window, rows: rows)
+            } else { throw ToruError(message: "local_method_forbidden: invalid gesture target") }
             return NSNull()
         case "formInput":
             let (resolved, window) = try target(args.first)
@@ -256,20 +274,27 @@ final class DesktopControl: @unchecked Sendable {
             var trail: [[String: Any]] = []
             var timeline: [[String: Any]] = []
             for entry in driver.timeline {
-                let atMs = entry["atMs"] as? Int ?? 0
+                // A gesture is recorded when it ends and placed from when it began, as the web driver's emphasis is.
+                let atMs = entry["startMs"] as? Int ?? entry["atMs"] as? Int ?? 0
                 var action: [String: Any] = ["atMs": atMs, "type": entry["type"] as? String ?? "action", "ref": NSNull(), "element": entry["element"] as? String ?? ""]
+                if let endMs = entry["endMs"] as? Int { action["endMs"] = endMs }
+                if let gesture = entry["gesture"] as? String { action["element"] = "\(gesture) \(action["element"] as? String ?? "")" }
                 if let frame = entry["frame"] as? CGRect {
                     let focus: [String: Any] = ["x": fx(frame.minX), "y": fy(frame.minY), "width": frame.width / w, "height": frame.height / h]
                     action["focus"] = focus
                     if entry["type"] as? String == "click" {
-                        trail.append(["atMs": atMs, "x": fx(frame.midX), "y": fy(frame.midY), "shape": "hand", "width": frame.width / w, "height": frame.height / h])
+                        var click: [String: Any] = ["atMs": atMs, "x": fx(frame.midX), "y": fy(frame.midY), "shape": "hand", "width": frame.width / w, "height": frame.height / h]
+                        if let panel = entry["container"] as? CGRect {
+                            click["container"] = ["x": fx(panel.minX), "y": fy(panel.minY), "width": panel.width / w, "height": panel.height / h]
+                        }
+                        trail.append(click)
                     }
                 }
                 timeline.append(action)
             }
             // The flow ends on its result: a moment after the last step the camera opens up to the whole window,
             // the way a web recording ends on the result it was asked for.
-            if let last = timeline.last?["atMs"] as? Int {
+            if let last = timeline.map({ ($0["endMs"] as? Int) ?? ($0["atMs"] as? Int ?? 0) }).max() {
                 timeline.append(["atMs": last + 300, "type": "result", "ref": NSNull(), "element": "window",
                                  "focus": ["x": fx(0), "y": fy(0), "width": ww / w, "height": wh / h]])
             }

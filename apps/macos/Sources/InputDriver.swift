@@ -52,40 +52,212 @@ final class InputDriver {
         self.reader = reader
         pid = reader.pid
         self.started = started
+        seed = UInt64(max(0, started.timeIntervalSince1970 * 1000))
     }
 
-    /// Where an action landed, in window points, and what it was, for click zooms and the timeline.
-    private func record(_ type: String, _ target: OutlineTarget?, window: CGRect, extra: [String: Any] = [:]) {
+    /// Seeded at the recording's start, as the web driver's motion is: trips vary, a re-run of a seed does not.
+    private var seed: UInt64
+    /// SplitMix64, in [0, 1).
+    private func random() -> Double {
+        seed &+= 0x9E37_79B9_7F4A_7C15
+        var z = seed
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return Double((z ^ (z >> 31)) >> 11) / Double(UInt64(1) << 53)
+    }
+
+    /// Minimum-jerk progress: the bell-shaped speed of a reaching hand (docs/gestos-humanos.md).
+    static func minimumJerk(_ progress: Double) -> Double {
+        let p = min(1, max(0, progress))
+        return p * p * p * (10 - 15 * p + 6 * p * p)
+    }
+
+    /// Where an action landed, in window points, and what it was, for click zooms and the timeline. `frame` (screen
+    /// points) overrides the target's own, for a gesture over several rows.
+    private func record(_ type: String, _ target: OutlineTarget?, window: CGRect, frame: CGRect? = nil, extra: [String: Any] = [:]) {
         var entry: [String: Any] = ["type": type, "atMs": elapsedMs]
-        if let target {
-            entry["frame"] = CGRect(x: target.frame.minX - window.minX, y: target.frame.minY - window.minY, width: target.frame.width, height: target.frame.height)
-            entry["element"] = target.label
+        if let box = frame ?? target?.frame {
+            entry["frame"] = CGRect(x: box.minX - window.minX, y: box.minY - window.minY, width: box.width, height: box.height)
         }
+        if let target { entry["element"] = target.label }
         timeline.append(entry.merging(extra) { a, _ in a })
     }
 
     private var elapsedMs: Int { Int(Date().timeIntervalSince(started) * 1000) }
 
-    /// A smooth path from the last position, for the renderer's cursor and click zooms.
+    /// Appends a path along `place` (progress 0–1, window points) over `durationMs` from `start`, and returns its end.
+    private func path(from start: Int, durationMs: Double, _ place: (Double) -> CGPoint) -> Int {
+        let steps = max(2, Int((durationMs / 16).rounded()))
+        for step in 1...steps {
+            let point = place(Double(step) / Double(steps))
+            telemetry.append(PointerSample(x: point.x, y: point.y, atMs: start + step * 16, kind: "move"))
+        }
+        cursor = place(1)
+        return start + steps * 16
+    }
+
+    private static func lerp(_ from: CGPoint, _ to: CGPoint, _ progress: Double) -> CGPoint {
+        let eased = minimumJerk(progress)
+        return CGPoint(x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased)
+    }
+
+    /// Waits until the telemetry's clock reaches `end`, so the next action starts after the motion drawn.
+    private func wait(until end: Int, extra: Double = 0) {
+        Thread.sleep(forTimeInterval: max(0, Double(end - elapsedMs) / 1000) + extra)
+    }
+
+    /// A path from the last position, for the renderer's cursor and click zooms, moving as a hand does.
     func glide(to point: CGPoint, window: CGRect, kind: String) {
         let local = CGPoint(x: point.x - window.minX, y: point.y - window.minY)
         let from = cursor ?? CGPoint(x: window.width / 2, y: window.height / 2)
-        // The same travel a web recording draws: 550ms plus half a millisecond per point, at most 1.2s, eased in and
-        // out. A fixed 0.3s made every move a dart from one control to the next, too fast to follow.
-        let travelMs = min(1_200, 550 + hypot(local.x - from.x, local.y - from.y) * 0.5)
-        let steps = max(2, Int((travelMs / 16).rounded()))
-        let start = elapsedMs
-        for step in 1...steps {
-            let t = Double(step) / Double(steps)
-            let eased = t * t * (3 - 2 * t)
-            // Arriving is a move. The press is marked by markPress() when it actually happens, so the rendered cursor
-            // does not press the instant it lands; `kind` names what the travel is for.
-            telemetry.append(PointerSample(x: from.x + (local.x - from.x) * eased, y: from.y + (local.y - from.y) * eased, atMs: start + step * 16, kind: "move"))
+        // The same travel a web recording draws: 550ms plus half a millisecond per point, at most 1.2s. Minimum jerk
+        // along a path bowed 2–6% of the distance; some long trips land a few points off or pass the target, and a
+        // short corrective submovement brings them home (docs/gestos-humanos.md).
+        let distance = hypot(local.x - from.x, local.y - from.y)
+        let travelMs = min(1_200, 550 + distance * 0.5)
+        let bend = distance < 80 ? 0 : (random() < 0.5 ? -1.0 : 1.0) * (0.02 + random() * 0.04) * distance
+        var through = local, correctionMs = 0.0
+        if distance > 400, random() < 0.15 {
+            let past = 4 + random() * 6
+            through = CGPoint(x: local.x + (local.x - from.x) / distance * past, y: local.y + (local.y - from.y) / distance * past)
+            correctionMs = 120 + random() * 100
+        } else if distance > 300, random() < 0.3 {
+            let angle = random() * 2 * .pi, off = 2 + random() * 6
+            through = CGPoint(x: local.x + cos(angle) * off, y: local.y + sin(angle) * off)
+            correctionMs = 120 + random() * 100
+        }
+        let dx = through.x - from.x, dy = through.y - from.y, length = max(1, hypot(dx, dy))
+        // Arriving is a move. The press is marked by markPress() when it actually happens, so the rendered cursor
+        // does not press the instant it lands; `kind` names what the travel is for.
+        var end = path(from: elapsedMs, durationMs: travelMs) { t in
+            let eased = Self.minimumJerk(t), bow = bend * sin(.pi * eased)
+            return CGPoint(x: from.x + dx * eased - dy / length * bow, y: from.y + dy * eased + dx / length * bow)
+        }
+        if correctionMs > 0 {
+            let landed = through
+            end = path(from: end, durationMs: correctionMs) { t in Self.lerp(landed, local, t) }
         }
         cursor = local
         // The pointer arrives, then rests on the control long enough to be seen before the press, as a hand settles
-        // and hover styling shows. A 160ms beat read as a dart-and-click in the rendered video.
-        Thread.sleep(forTimeInterval: Double(steps) * 0.016 + 0.4)
+        // and hover styling shows: the "fraction of a second" of screencast practice, 250–400ms.
+        wait(until: end, extra: 0.25 + random() * 0.15)
+    }
+
+    /// A hand at rest is not still: drifts of 1–3 points every 400–900ms for `seconds`.
+    private func rest(_ seconds: Double) {
+        guard let home = cursor else { Thread.sleep(forTimeInterval: seconds); return }
+        let start = elapsedMs
+        var offset = 0.0
+        while true {
+            offset += 400 + random() * 500
+            if offset + 120 >= seconds * 1000 { break }
+            let angle = random() * 2 * .pi, off = 1 + random() * 2
+            let from = cursor ?? home, to = CGPoint(x: home.x + cos(angle) * off, y: home.y + sin(angle) * off)
+            _ = path(from: start + Int(offset), durationMs: 120) { t in Self.lerp(from, to, t) }
+        }
+        wait(until: start + Int(seconds * 1000))
+    }
+
+    /// Labels of the presses that change something, before which a presenter hesitates.
+    static let committing: Set<String> = ["criar", "enviar", "ativar", "publicar", "confirmar", "salvar", "lançar",
+                                          "create", "send", "activate", "publish", "confirm", "save", "launch", "submit"]
+    static func commits(_ label: String) -> Bool {
+        label.lowercased().split(whereSeparator: { !$0.isLetter }).contains { committing.contains(String($0)) }
+    }
+
+    /// The panel around a control (the card, form or list holding it): the widest ancestor still at most half the window
+    /// and at least four times the control, in screen points. Clicks inside one panel are one shot.
+    private func panel(of target: OutlineTarget, window: CGRect) -> CGRect? {
+        let area = max(1, target.frame.width * target.frame.height), limit = window.width * window.height * 0.5
+        var found: CGRect?
+        var node: AXUIElement? = target.element
+        for _ in 0..<20 {
+            var parent: AnyObject?
+            guard let current = node, AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parent) == .success,
+                  let next = parent else { break }
+            let element = next as! AXUIElement
+            guard let frame = elementFrame(element) else { node = element; continue }
+            if frame.width * frame.height > limit { break }
+            if frame.width * frame.height >= area * 4 { found = frame.intersection(window) }
+            node = element
+        }
+        return found.flatMap { $0.isNull || $0.isEmpty ? nil : $0 }
+    }
+
+    /// A gesture that shows rather than presses (docs/gestos-humanos.md): rest on an element, circle or underline it, or
+    /// sweep down the rows of the table or list it sits in. Recorded as an `emphasis` moment framed on what it showed.
+    func gesture(_ kind: String, _ target: OutlineTarget?, at point: CGPoint?, window: CGRect, rows: Int) throws {
+        guard let screen = target?.frame ?? point.map({ CGRect(x: $0.x - 40, y: $0.y - 12, width: 80, height: 24) }) else {
+            throw InputError.notFound("gesture target")
+        }
+        let box = screen.intersection(window)
+        guard !box.isNull, !box.isEmpty else { throw InputError.refused("the element is not in the window") }
+        let local = CGRect(x: box.minX - window.minX, y: box.minY - window.minY, width: box.width, height: box.height)
+        let startMs = elapsedMs
+        var shown = box
+        switch kind {
+        case "point":
+            glide(to: CGPoint(x: box.midX, y: box.midY), window: window, kind: "move")
+            rest(0.8 + random() * 0.7)
+        case "circle":
+            // One clockwise loop 12 points out, from the upper left back to it.
+            let rx = Double(local.width) / 2 + 12, ry = Double(local.height) / 2 + 12
+            let cx = Double(local.midX), cy = Double(local.midY)
+            func circle(_ t: Double) -> CGPoint {
+                let angle = -0.75 * Double.pi + 2 * Double.pi * Self.minimumJerk(t)
+                return CGPoint(x: cx + cos(angle) * rx, y: cy + sin(angle) * ry)
+            }
+            let start = circle(0)
+            glide(to: CGPoint(x: start.x + window.minX, y: start.y + window.minY), window: window, kind: "move")
+            wait(until: path(from: elapsedMs, durationMs: 900 + random() * 300, circle))
+        case "underline":
+            let y = local.maxY + 6
+            glide(to: CGPoint(x: box.minX, y: y + window.minY), window: window, kind: "move")
+            wait(until: path(from: elapsedMs, durationMs: 600 + random() * 300) { t in
+                CGPoint(x: local.minX + local.width * Self.minimumJerk(t), y: y) })
+        case "sweep":
+            guard let target else { throw InputError.unsupported("a sweep needs an element in the list") }
+            let frames = sweptRows(from: target, window: window, count: min(5, max(1, rows)))
+            guard let first = frames.first else { throw InputError.notFound("rows to sweep") }
+            // Down the left third of each row, where its name usually is, stopping on each one.
+            let along = { (row: CGRect) -> CGPoint in
+                CGPoint(x: row.minX - window.minX + min(row.width / 3, 240), y: row.midY - window.minY)
+            }
+            let opening = along(first)
+            glide(to: CGPoint(x: opening.x + window.minX, y: opening.y + window.minY), window: window, kind: "move")
+            var end = elapsedMs
+            for row in frames.dropFirst() {
+                let from = cursor ?? opening, to = along(row)
+                end = path(from: end + 150, durationMs: 150) { t in Self.lerp(from, to, t) }
+            }
+            wait(until: end + 150)
+            shown = frames.reduce(first) { $0.union($1) }
+        default:
+            throw InputError.unsupported("gesture \(kind)")
+        }
+        record("emphasis", target, window: window, frame: shown, extra: ["startMs": startMs, "endMs": elapsedMs, "gesture": kind])
+    }
+
+    /// The rows of the table, outline or list holding `target`, from its own row down, that are inside the window.
+    private func sweptRows(from target: OutlineTarget, window: CGRect, count: Int) -> [CGRect] {
+        let containers: Set<String> = ["AXTable", "AXOutline", "AXList", "AXGrid"]
+        var node: AXUIElement? = target.element
+        var own: AXUIElement?
+        for _ in 0..<15 {
+            guard let current = node else { break }
+            let role = attribute(current, kAXRoleAttribute) as? String ?? ""
+            if role == "AXRow" { own = current }
+            if containers.contains(role) {
+                let rows = (attribute(current, kAXRowsAttribute) as? [AXUIElement]) ?? (attribute(current, kAXChildrenAttribute) as? [AXUIElement]) ?? []
+                let from = own.flatMap { row in rows.firstIndex { CFEqual($0, row) } } ?? 0
+                return rows.dropFirst(from).compactMap { elementFrame($0) }
+                    .filter { window.intersects($0) && $0.height > 0 }.prefix(count).map { $0.intersection(window) }
+            }
+            var parent: AnyObject?
+            guard AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parent) == .success, let next = parent else { break }
+            node = (next as! AXUIElement)
+        }
+        return []
     }
 
     /// The press itself, at the moment the app receives it, so the rendered cursor presses then and not on arrival.
@@ -96,6 +268,8 @@ final class InputDriver {
 
     func click(_ target: OutlineTarget, window: CGRect) throws {
         glide(to: CGPoint(x: target.frame.midX, y: target.frame.midY), window: window, kind: "click")
+        // A presenter hesitates over the press that changes something ("Criar", "Enviar", "Ativar").
+        if Self.commits(target.label) { rest(0.4 + random() * 0.3) }
         let actions = target.visual ? [] : actionNames(target.element)
         let center = CGPoint(x: target.frame.midX, y: target.frame.midY)
         let inFront = NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
@@ -121,7 +295,11 @@ final class InputDriver {
         } else {
             throw InputError.unsupported("click on \(target.role)")
         }
-        record("click", target, window: window)
+        var extra: [String: Any] = [:]
+        if let panel = panel(of: target, window: window) {
+            extra["container"] = CGRect(x: panel.minX - window.minX, y: panel.minY - window.minY, width: panel.width, height: panel.height)
+        }
+        record("click", target, window: window, extra: extra)
     }
 
     private func elementFrame(_ element: AXUIElement) -> CGRect? {
