@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCursorRecording,
   buildExporterConfig,
+  clickReserveRanges,
   clampRadius,
   contentRect,
   depthForTarget,
@@ -117,7 +118,8 @@ describe("zoom regions", () => {
     const regions = proposeZoomRegions(panel, 20_000);
 
     expect(regions).toHaveLength(1);
-    expect(regions[0]?.startMs).toBe(2_000);
+    // Opened before the first click, so the camera has arrived when it lands.
+    expect(regions[0]?.startMs).toBe(1_100);
     expect(regions[0]?.endMs).toBeGreaterThan(9_500);
   });
 
@@ -155,9 +157,9 @@ describe("zoom regions", () => {
       12_000,
     );
     expect(regions[0]?.customScale).not.toBe(regions[1]?.customScale);
-    // OpenScreen already begins its camera transition about a second before startMs. Starting the
-    // first region earlier as well erases the opening establishing shot.
-    expect(regions[0]?.startMs).toBe(2_000);
+    // The first region opens before its click like every other one: a camera still arriving when the
+    // press lands showed the click before the zoom (27/10/2026).
+    expect(regions[0]?.startMs).toBe(1_100);
   });
 
   it("never overlaps adjacent regions", () => {
@@ -876,7 +878,7 @@ it("frames a delayed result at its own time and bounds, without inventing a clic
     { atMs: 15000, type: "result", ref: null, element: "Table ready", focus: { x: 0.1, y: 0.4, width: 0.6, height: 0.3 } },
   ]);
   expect(regions).toHaveLength(2);
-  expect(regions[0]).toMatchObject({ startMs: 1000, intent: "action" });
+  expect(regions[0]).toMatchObject({ startMs: 100, intent: "action" });
   expect(regions[1]).toMatchObject({ startMs: 15000, endMs: 18200, focus: { cx: 0.4, cy: 0.55 }, intent: "result", focusMode: "manual" });
   const wide = proposeZoomRegions([], 20000, [], [{ atMs: 15000, type: "result", ref: null, element: "Done", focus: { x: 0, y: 0, width: 1, height: 1 } }]);
   expect(wide[0]?.customScale).toBe(1);
@@ -1066,7 +1068,8 @@ describe("still moments", () => {
 
   it("marks travels and presses as activity, never the rest", () => {
     const activity = pointerActivity([...travel(8_000, 9_000, 0.2, 0.5), ...press(9_200, 0.5)]);
-    expect(activity).toEqual([{ startMs: 7_800, endMs: 9_990 }]);
+    // A press reserves the 1.5s before it: the approach and the camera arriving.
+    expect(activity).toEqual([{ startMs: 7_700, endMs: 9_990 }]);
   });
 
   it("cuts a still picture with a still pointer, keeping a beat after the change and before the next", () => {
@@ -1075,17 +1078,36 @@ describe("still moments", () => {
       stillRanges: [{ startMs: 2_000, endMs: 8_000 }, { startMs: 10_000, endMs: 20_000 }],
       semanticTimeline: [{ type: "result", atMs: 15_000, ref: null, element: "Done", focus: { x: 0.1, y: 0.1, width: 0.3, height: 0.2 } }] });
     expect(spans).toEqual([
-      { startMs: 2_500, endMs: 7_750 },
+      { startMs: 2_500, endMs: 7_700 },
       { startMs: 10_500, endMs: 14_700 },
       { startMs: 18_200, endMs: 19_750 },
     ]);
   });
 
-  it("starts the camera with the pointer, not a second before it", () => {
+  it("settles the camera before the press even when the travel is short", () => {
     const regions = proposeZoomRegions([click(9_200, { x: 0.5, y: 0.4 })], 20_000,
       [...travel(8_000, 9_000, 0.2, 0.5), ...press(9_200, 0.5)], [], true);
-    // Their camera starts easing about 1,023ms before a region: here, just after the pointer leaves at 8s.
-    expect(regions[0]!.startMs).toBe(9_103);
+    // Anchored on the travel the region would open at 9,103 and the camera would still be easing at the
+    // press; it opens 800ms before the click instead.
+    expect(regions[0]!.startMs).toBe(8_400);
+  });
+
+  it("starts the camera with the pointer when the travel leaves room", () => {
+    const regions = proposeZoomRegions([click(8_500, { x: 0.5, y: 0.4 })], 20_000,
+      [...travel(6_000, 7_000, 0.2, 0.5), ...press(8_500, 0.5)], [], true);
+    // Their camera starts easing about 1,023ms before a region: here, 677ms after the pointer leaves at 6s,
+    // and it has settled long before the press at 8.5s.
+    expect(regions[0]!.startMs).toBe(7_600);
+  });
+
+  it("never cuts or speeds up the approach to a click", () => {
+    const reserves = clickReserveRanges([click(5_000), click(5_800), click(12_000)]);
+    expect(reserves).toEqual([{ startMs: 3_500, endMs: 6_300 }, { startMs: 10_500, endMs: 12_500 }]);
+    const config = buildExporterConfig({ ...base, durationMs: 20_000, pointerTrail: [click(12_000, { x: 0.5, y: 0.4 })],
+      pointerTelemetry: [], stillRanges: [{ startMs: 2_000, endMs: 19_000 }] }, { compressPauses: true, zoom: false });
+    for (const trim of config.trimRegions as Array<{ startMs: number; endMs: number }>) {
+      expect(trim.endMs <= 10_500 || trim.startMs >= 12_500).toBe(true);
+    }
   });
 
   it("holds one shot over two nearby clicks when the wait between them is cut", () => {

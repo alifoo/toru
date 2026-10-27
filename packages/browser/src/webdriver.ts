@@ -87,6 +87,27 @@ const typeJitterMs = 75;
 const pointerStepMs = 16;
 /** The beat after a travel that lets hover styling register. */
 const travelPauseMs = 160;
+/**
+ * The extra beat before pressing a target that opens a new shot (far from the last press, or long after it).
+ * The renderer's camera needs about a second to reach a new framing; a press right after a 550ms travel landed
+ * before it arrived. The values mirror render-contract's shot grouping (`sameShotRadius`, `sameShotGapMs`).
+ */
+const newShotHoldMs = 700;
+const newShotRadius = 0.33;
+const newShotGapMs = 9_000;
+
+/** Whether a press at `target` starts a new shot after `previous`, in viewport fractions as the renderer groups them. */
+export function opensNewShot(
+  previous: { x: number; y: number; atMs: number } | null,
+  target: { x: number; y: number },
+  viewport: { width: number; height: number },
+  nowMs: number,
+): boolean {
+  if (!previous) return true;
+  const dx = (target.x - previous.x) / Math.max(1, viewport.width);
+  const dy = (target.y - previous.y) / Math.max(1, viewport.height);
+  return Math.hypot(dx, dy) > newShotRadius || nowMs - previous.atMs > newShotGapMs;
+}
 /** Cap on retained telemetry samples, so a long capture cannot grow without bound. */
 const maximumTelemetrySamples = 20_000;
 const maximumRecordingBytes = 256 * 1024 * 1024;
@@ -480,6 +501,8 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
   readonly semanticActions: CaptureSemanticAction[] = [];
   /** Last commanded pointer position, in viewport pixels, so travel starts where it stopped. */
   pointerAt: { x: number; y: number } | null = null;
+  /** Where and when the last recorded press landed, to tell a press inside the current shot from one that opens a new one. */
+  private lastPress: { x: number; y: number; atMs: number } | null = null;
   recordingTimer: ReturnType<typeof setInterval> | undefined;
   recordingCapturePending = false;
   redirectCount = 0;
@@ -598,6 +621,11 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
     const moved = this.recordingStartedAtMs === null ? false : await this.movePointerTo(element);
     await this.recordPointer(element);
     if (moved) {
+      // A press that opens a new shot waits for the camera to get there; one inside the current shot does not.
+      if (this.pointerAt && opensNewShot(this.lastPress, this.pointerAt, this.viewportSize, Date.now())) {
+        await delay(newShotHoldMs);
+      }
+      if (this.pointerAt) this.lastPress = { ...this.pointerAt, atMs: Date.now() };
       this.recordPress();
       // Press and release where the pointer already is, rather than the element click command,
       // which would jump the pointer to the target and undo the travel just recorded.

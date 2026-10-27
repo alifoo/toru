@@ -425,6 +425,18 @@ const resultDwellMs = 3_200;
 /** How long before a click a region opens, so the camera travels with the approaching pointer. */
 const leadInMs = 900;
 /**
+ * The latest a region may open before its first click. Their camera keeps easing for about half a second after a
+ * region's start, so opening it this early leaves the frame settled some 300ms before the press: the viewer sees
+ * the click land instead of a camera still arriving at it.
+ */
+const clickSettleMs = 800;
+/**
+ * Around every press nothing is cut or sped up: the pointer's approach, the camera arriving and the first moment
+ * of the response are what a viewer follows.
+ */
+const clickReserveBeforeMs = 1_500;
+const clickReserveAfterMs = 500;
+/**
  * What keeps consecutive clicks inside one shot.
  *
  * The radius is the important one, and it is generous on purpose: a third of the frame apart is
@@ -503,7 +515,8 @@ export function pointerActivity(telemetry: readonly CapturePointerSample[]): Tim
   const spans: TimeRange[] = [];
   sorted.forEach((sample, index) => {
     const previous = sorted[index - 1];
-    if (sample.kind === "down" || sample.kind === "up") spans.push({ startMs: sample.atMs - 250, endMs: sample.atMs + 700 });
+    if (sample.kind === "down") spans.push({ startMs: sample.atMs - clickReserveBeforeMs, endMs: sample.atMs + 700 });
+    else if (sample.kind === "up") spans.push({ startMs: sample.atMs - 250, endMs: sample.atMs + 700 });
     else if (previous && (previous.x !== sample.x || previous.y !== sample.y) && sample.atMs - previous.atMs < thinkingGapMs) {
       spans.push({ startMs: previous.atMs - 200, endMs: sample.atMs + 150 });
     }
@@ -531,6 +544,14 @@ export function removableSpans(observation: CaptureObservation): TimeRange[] {
             : []),
   ];
   return subtractRanges(still, holds).filter(span => span.endMs - span.startMs >= minimumCutMs);
+}
+
+/** The stretch around each click that no cut or speed-up may touch. */
+export function clickReserveRanges(pointers: readonly CapturePointer[]): TimeRange[] {
+  return mergeRanges(pointers.map(pointer => ({
+    startMs: Math.max(0, pointer.atMs - clickReserveBeforeMs),
+    endMs: pointer.atMs + clickReserveAfterMs,
+  })));
 }
 
 /**
@@ -909,18 +930,17 @@ export function proposeZoomRegions(
     const last = shot[shot.length - 1];
     if (!first || !last) continue;
     /**
-     * Every region but the first begins before its opening click, so the camera is already moving
-     * while the pointer travels to the target — the approach a viewer follows. The first region is
-     * left on its click: their camera starts easing about a second ahead of a region anyway, and
-     * pulling the first one earlier eats the opening establishing shot.
-     *
-     * When the driver's path shows where the travel began, the region is placed so their camera sets
-     * off with the pointer instead: a second-early ease reads as a zoom into a cursor that is not moving.
+     * Every region begins before its opening click, the first one included, so the camera has arrived when the
+     * press lands — the approach a viewer follows. When the driver's path shows where the travel began, the region
+     * is placed so their camera sets off with the pointer: a second-early ease reads as a zoom into a cursor that is
+     * not moving. Either way it opens at least `clickSettleMs` before the click; on 27/10/2026 a travel-anchored
+     * start landed after the press and every Nock demo showed the click before the zoom.
      */
     const travelStart = travelStartBefore(telemetry, first.atMs);
-    const startMs = travelStart !== undefined
-      ? Math.max(0, Math.min(first.atMs + 600, Math.max(first.atMs - leadInMs, travelStart + cameraLeadMs + 80)))
-      : regions.length === 0 ? Math.max(0, first.atMs) : Math.max(0, first.atMs - leadInMs);
+    const anchored = travelStart !== undefined
+      ? Math.max(first.atMs - leadInMs, travelStart + cameraLeadMs + 80)
+      : first.atMs - leadInMs;
+    const startMs = Math.max(0, Math.min(first.atMs - clickSettleMs, anchored));
     const intent = semanticActionFor(shot, semanticTimeline);
     if (intent?.type === "setup" || (directed && first.shape === "text")) continue;
     const endMs = Math.min(
@@ -1375,9 +1395,11 @@ export function buildExporterConfig(
   const zoomRegions = presentation.zoom === false ? [] : proposeZoomRegions(observation.pointerTrail, observation.durationMs,
     observation.pointerTelemetry, observation.semanticTimeline, observation.directed, removable, zoomScale)
     .map(region => zoomScale === undefined ? region : { ...region, customScale: Math.min(region.customScale, zoomScale) });
+  const clickReserves = clickReserveRanges(observation.pointerTrail);
   const protectedRanges = [
     { startMs: 0, endMs: 1_200 },
     ...zoomRegions.map(region => ({ startMs: region.startMs - 1_000, endMs: region.endMs + 1_000 })),
+    ...clickReserves,
   ];
   const directedCuts: TrimRegion[] = [];
   if (cutting && observation.stillRanges) {
@@ -1386,7 +1408,7 @@ export function buildExporterConfig(
       { startMs: region.startMs - cameraLeadMs - 80, endMs: region.startMs + 550 },
       { startMs: region.endMs - 100, endMs: region.endMs + cameraReleaseMs + 50 },
     ]);
-    for (const span of subtractRanges(removable, transitions)) {
+    for (const span of subtractRanges(removable, [...transitions, ...clickReserves])) {
       if (span.endMs - span.startMs >= minimumCutMs) directedCuts.push({ id: `still-${directedCuts.length}`, ...span });
     }
   } else if (cutting) {
@@ -1437,6 +1459,7 @@ export function buildExporterConfig(
             { startMs: observation.durationMs - 1_500, endMs: observation.durationMs },
             // Preserve the existing camera easing and result dwell at normal speed.
             ...zoomRegions.map(region => ({ startMs: region.startMs - 1_000, endMs: region.endMs + 1_000 })),
+            ...clickReserves,
           ] : [])
         : []),
     annotationRegions: presentation.annotationRegions ?? [],
