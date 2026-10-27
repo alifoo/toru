@@ -751,6 +751,9 @@ it('makes gestures with the driver, falls back to pointing on one without them, 
     driver.gesture!.mockRejectedValueOnce(new Error('local_method_forbidden'));
     await recorder.call(owner, 'browser_point', { id, ref: 'ref_1' });
     expect(driver.pointer).toHaveBeenCalledWith('move', { type: 'ref', ref: 'ref_1' });
+    // A number or a cell has no ref: a point on screen names it.
+    await recorder.call(owner, 'browser_trace', { id, x: 640, y: 300, shape: 'underline' });
+    expect(driver.gesture).toHaveBeenCalledWith('underline', { type: 'coordinate', x: 640, y: 300 }, undefined);
     await recorder.call(owner, 'browser_read', { id, amount: 900 });
     const scrolled = driver.scrollBy.mock.calls.map(call => call[2] as number);
     expect(scrolled.reduce((sum, step) => sum + step, 0)).toBe(900);

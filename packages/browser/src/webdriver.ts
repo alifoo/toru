@@ -159,10 +159,17 @@ export function underlinePoint(box: Box, progress: number): Point {
 /** Labels of the presses that change state, before which a presenter hesitates (docs/gestos-humanos.md). */
 const committingLabel = /(?:^|\s)(?:criar|enviar|ativar|publicar|confirmar|salvar|lançar|create|send|activate|publish|confirm|save|launch|submit)\b/iu;
 
+/**
+ * The rows to sweep. Agents name a list by something clickable in it (a link in the first row), so an element inside a
+ * table or list sweeps that table or list, from its own row down; an element holding rows sweeps them from the top.
+ */
 const rowsScript = `const e=arguments[0],n=arguments[1],W=innerWidth,H=innerHeight;
 const seen=r=>r.width>0&&r.height>0&&r.bottom>0&&r.top<H&&r.right>0&&r.left<W;
-let rows=[...e.querySelectorAll('tbody tr,[role=row]')].filter(r=>!r.querySelector('th'));if(!rows.length)rows=[...e.querySelectorAll('li,[role=listitem]')];if(!rows.length)rows=[...e.children];
-return rows.map(r=>r.getBoundingClientRect()).filter(seen).slice(0,n).map(r=>({x:r.left,y:r.top,width:r.width,height:r.height}));`;
+const rowsOf=root=>{let rows=[...root.querySelectorAll('tbody tr,[role=row]')].filter(r=>!r.querySelector('th'));if(!rows.length)rows=[...root.querySelectorAll('li,[role=listitem]')];return rows;};
+let rows=rowsOf(e),from=0;
+if(!rows.length){const host=e.closest('table,[role=table],[role=grid],ul,ol,[role=list]');if(host){rows=rowsOf(host);const own=e.closest('tr,[role=row],li,[role=listitem]');from=Math.max(0,rows.indexOf(own));}}
+if(!rows.length)rows=[...e.children];
+return rows.slice(from).map(r=>r.getBoundingClientRect()).filter(seen).slice(0,n).map(r=>({x:r.left,y:r.top,width:r.width,height:r.height}));`;
 
 /**
  * The extra beat before pressing a target that opens a new shot (far from the last press, or long after it).
@@ -2097,6 +2104,8 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
     const element = await this.elementForTarget(target);
     await this.assertElementAllowed(element);
     if (this.recordingStartedAtMs === null) return;
+    // An element scrolled past (a table row now under the header) is brought back first: a gesture at nothing frames nothing.
+    await this.scrollIntoViewSmoothly(element);
     const measured = await this.executeScript("gesture_box",
       "const r=arguments[0].getBoundingClientRect();return {x:r.left,y:r.top,width:r.width,height:r.height,w:innerWidth,h:innerHeight};",
       [{ [elementKey]: element }]);

@@ -631,7 +631,10 @@ export class Recorder {
         case 'browser_point':
         case 'browser_trace':
         case 'browser_sweep': {
-          const target = { type: 'ref' as const, ref: z.string().min(1).max(200).parse(args.ref) };
+          // Data is rarely clickable, so the outline has no ref for a number or a cell: a point on screen names it then.
+          const target = typeof args.ref === 'string' ? { type: 'ref' as const, ref: args.ref } : {
+            type: 'coordinate' as const, x: z.number().min(0).max(1919).parse(args.x), y: z.number().min(0).max(1079).parse(args.y),
+          };
           const kind = name === 'browser_point' ? 'point' : name === 'browser_sweep' ? 'sweep' : z.enum(['circle', 'underline']).parse(args.shape);
           const options = name === 'browser_sweep' && args.rows !== undefined ? { rows: z.number().int().min(1).max(5).parse(args.rows) } : undefined;
           // A driver without gestures (Toru for Chrome before them, a Mac window) still points the cursor at the element.
