@@ -30,4 +30,4 @@ Plano: `docs/plano-direcao-humana-2026-10-27.md` (aprovado em 27/10/2026). Um PR
 
 - 27/10: etapa 1a pronta (este arquivo criado), PR #18.
 - 27/10: Fase 0 pronta (catálogo).
-- 27/10: etapa 1b pronta (render-contract 107 testes, browser +2).
+- 27/10: etapa 1b pronta, PR #20 (render-contract 107 testes, browser +2).

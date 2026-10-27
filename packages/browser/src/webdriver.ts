@@ -85,8 +85,60 @@ const typeCharacterMs = 95;
 const typeJitterMs = 75;
 /** Interval between interpolated pointer positions, near display rate. */
 const pointerStepMs = 16;
-/** The beat after a travel that lets hover styling register. */
-const travelPauseMs = 160;
+type Point = { x: number; y: number };
+
+/** A small seeded generator (mulberry32): the same recording seed gives the same gestures. */
+export function motionRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
+  };
+}
+
+/** Minimum-jerk progress: the bell-shaped speed of a reaching hand (docs/gestos-humanos.md). */
+export function minimumJerk(progress: number): number {
+  const p = Math.min(1, Math.max(0, progress));
+  return p * p * p * (10 - 15 * p + 6 * p * p);
+}
+
+/**
+ * How one travel deviates from a straight line, as docs/gestos-humanos.md measures a hand: a bow of 2–6% of the
+ * distance to one side (none under 80px); on 15% of trips over 400px it passes the target by 4–10px, otherwise on 30%
+ * of trips over 300px it lands 2–8px off; either way a 120–220ms corrective submovement brings it home.
+ */
+export type HumanTravel = { through: Point; bend: number; correctionMs: number };
+
+export function planHumanTravel(from: Point, to: Point, random: () => number): HumanTravel {
+  const distance = Math.hypot(to.x - from.x, to.y - from.y);
+  const bend = distance < 80 ? 0 : (random() < 0.5 ? -1 : 1) * (0.02 + random() * 0.04) * distance;
+  const correctionMs = () => Math.round(120 + random() * 100);
+  if (distance > 400 && random() < 0.15) {
+    const past = 4 + random() * 6;
+    return { bend, correctionMs: correctionMs(), through: {
+      x: Math.round(to.x + (to.x - from.x) / distance * past), y: Math.round(to.y + (to.y - from.y) / distance * past) } };
+  }
+  if (distance > 300 && random() < 0.3) {
+    const angle = random() * Math.PI * 2, off = 2 + random() * 6;
+    return { bend, correctionMs: correctionMs(), through: { x: Math.round(to.x + Math.cos(angle) * off), y: Math.round(to.y + Math.sin(angle) * off) } };
+  }
+  return { bend, correctionMs: 0, through: to };
+}
+
+/** Where the main movement of `travel` is at `progress` (0–1 of its duration): minimum jerk along a bowed path. */
+export function humanTravelPoint(from: Point, travel: HumanTravel, progress: number): Point {
+  const eased = minimumJerk(progress);
+  const dx = travel.through.x - from.x, dy = travel.through.y - from.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const bow = travel.bend * Math.sin(Math.PI * eased);
+  return {
+    x: Math.round(from.x + dx * eased - dy / length * bow),
+    y: Math.round(from.y + dy * eased + dx / length * bow),
+  };
+}
 /**
  * The extra beat before pressing a target that opens a new shot (far from the last press, or long after it).
  * The renderer's camera needs about a second to reach a new framing; a press right after a 550ms travel landed
@@ -492,6 +544,8 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
   recordingFailure: Error | null = null;
   screencast: CdpScreencastRecorder | null = null;
   recordingStartedAtMs: number | null = null;
+  /** Seeded at each recording's start, so its gestures vary between trips but not between re-runs of a seed. */
+  private motion: () => number = motionRandom(1);
   private lastRecordedRoute: string | undefined;
   /**
    * Which of the two recorders actually ran.
@@ -743,29 +797,38 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       1_200,
       pointerTravelMs + Math.hypot(targetX - from.x, targetY - from.y) * 0.5,
     );
+    const target = { x: targetX, y: targetY };
+    const travel = planHumanTravel(from, target, this.motion);
     await this.command("pointer_move", async () => {
-      const startedAt = performance.now();
-      const maximumSteps = Math.ceil(travelMs / pointerStepMs) * 2;
       let at = from;
-      for (let step = 0; ; step++) {
-        const stepStartedAt = performance.now();
-        const progress =
-          step >= maximumSteps ? 1 : Math.min(1, (stepStartedAt - startedAt) / travelMs);
-        const eased = progress * progress * (3 - 2 * progress);
-        const next = {
-          x: Math.round(from.x + (targetX - from.x) * eased),
-          y: Math.round(from.y + (targetY - from.y) * eased),
-        };
-        if (next.x !== at.x || next.y !== at.y || progress === 1) {
-          await move(next.x, next.y);
-          this.recordDriverSample(next.x, next.y, "move", progress === 1 ? arrivalShape : this.driverShape);
+      const glide = async (durationMs: number, place: (progress: number) => Point, last: boolean) => {
+        const startedAt = performance.now();
+        const maximumSteps = Math.ceil(durationMs / pointerStepMs) * 2;
+        for (let step = 0; ; step++) {
+          const stepStartedAt = performance.now();
+          const progress =
+            step >= maximumSteps ? 1 : Math.min(1, (stepStartedAt - startedAt) / durationMs);
+          const next = place(progress);
+          if (next.x !== at.x || next.y !== at.y || progress === 1) {
+            await move(next.x, next.y);
+            this.recordDriverSample(next.x, next.y, "move", progress === 1 && last ? arrivalShape : this.driverShape);
+          }
+          at = next;
+          if (progress === 1) break;
+          await delay(Math.max(0, pointerStepMs - (performance.now() - stepStartedAt)));
         }
-        at = next;
-        if (progress === 1) break;
-        await delay(Math.max(0, pointerStepMs - (performance.now() - stepStartedAt)));
+      };
+      await glide(travelMs, progress => humanTravelPoint(from, travel, progress), travel.correctionMs === 0);
+      if (travel.correctionMs > 0) {
+        // The corrective submovement: short, straight and bell-shaped, from where the reach ended onto the target.
+        const landed = at;
+        await glide(travel.correctionMs, progress => {
+          const eased = minimumJerk(progress);
+          return { x: Math.round(landed.x + (targetX - landed.x) * eased), y: Math.round(landed.y + (targetY - landed.y) * eased) };
+        }, true);
       }
-      // A short beat lets hover styling register without making the cursor trail the intent.
-      await delay(travelPauseMs);
+      // A short beat lets hover styling register, the "fraction of a second" a presenter rests on a target.
+      await delay(250 + Math.round(this.motion() * 150));
     });
     this.pointerAt = { x: targetX, y: targetY };
     this.driverShape = arrivalShape;
@@ -2118,6 +2181,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       [],
     ).catch(() => undefined);
     this.recordingStartedAtMs = Date.now();
+    this.motion = motionRandom(this.recordingStartedAtMs);
     await this.installTelemetryCollector();
     await this.readIdentity();
     if (this.debuggerAddress) {

@@ -15,6 +15,10 @@ import {
   type WebDriverTransport,
   opensNewShot,
   containerFrom,
+  humanTravelPoint,
+  minimumJerk,
+  motionRandom,
+  planHumanTravel,
 } from "./webdriver.js";
 
 const elementKey = "element-6066-11e4-a52e-4f735466cecf";
@@ -257,7 +261,8 @@ describe("WebDriverBrowserDriver", () => {
       await context.startRecording();
       const before = protocol.calls.length;
       await context.pointer("left_click", { type: "coordinate", x: 1000, y: 600 });
-      const calls = protocol.calls.slice(before).map((call) => JSON.stringify(call.body) ?? "");
+      // Body-less reads are the recorder's frame captures, which run on their own clock during the settle.
+      const calls = protocol.calls.slice(before).map((call) => JSON.stringify(call.body) ?? "").filter(Boolean);
       const lastMove = calls.map((body) => body.includes("pointerMove")).lastIndexOf(true);
       const press = calls.findIndex((body) => body.includes("pointerDown"));
       // Between arriving and pressing only the travel's telemetry is saved; every check came before the travel.
@@ -1696,5 +1701,48 @@ describe("click panel", () => {
     expect(containerFrom({ x: 0.1, y: 0.1, w: 0, h: 0.2 })).toBeUndefined();
     expect(containerFrom({ x: 1.2, y: 0.1, w: 0.2, h: 0.2 })).toBeUndefined();
     expect(containerFrom({ x: "a", y: 0.1, w: 0.2, h: 0.2 })).toBeUndefined();
+  });
+});
+
+describe("human travel", () => {
+  const from = { x: 100, y: 100 }, to = { x: 900, y: 500 };
+
+  it("speeds up and slows down like a reaching hand", () => {
+    expect(minimumJerk(0)).toBe(0);
+    expect(minimumJerk(1)).toBe(1);
+    expect(minimumJerk(0.5)).toBeCloseTo(0.5);
+    // Slow at both ends, fast in the middle.
+    expect(minimumJerk(0.1)).toBeLessThan(0.1);
+    expect(minimumJerk(0.6) - minimumJerk(0.4)).toBeGreaterThan(0.2);
+  });
+
+  it("repeats for a seed and varies between seeds", () => {
+    const first = Array.from({ length: 5 }, motionRandom(42));
+    expect(Array.from({ length: 5 }, motionRandom(42))).toEqual(first);
+    expect(Array.from({ length: 5 }, motionRandom(43))).not.toEqual(first);
+    expect(first.every(value => value >= 0 && value < 1)).toBe(true);
+  });
+
+  it("bows 2–6% of the distance, starts and ends where it should, and lands on target after any correction", () => {
+    const distance = Math.hypot(to.x - from.x, to.y - from.y);
+    for (let seed = 1; seed <= 200; seed++) {
+      const travel = planHumanTravel(from, to, motionRandom(seed));
+      expect(Math.abs(travel.bend)).toBeGreaterThanOrEqual(0.02 * distance - 0.001);
+      expect(Math.abs(travel.bend)).toBeLessThanOrEqual(0.06 * distance + 0.001);
+      expect(humanTravelPoint(from, travel, 0)).toEqual(from);
+      expect(humanTravelPoint(from, travel, 1)).toEqual(travel.through);
+      const miss = Math.hypot(travel.through.x - to.x, travel.through.y - to.y);
+      if (travel.correctionMs === 0) expect(miss).toBe(0);
+      else {
+        expect(miss).toBeLessThanOrEqual(11);
+        expect(travel.correctionMs).toBeGreaterThanOrEqual(120);
+        expect(travel.correctionMs).toBeLessThanOrEqual(220);
+      }
+    }
+  });
+
+  it("keeps short hops straight and exact", () => {
+    const travel = planHumanTravel({ x: 100, y: 100 }, { x: 150, y: 120 }, motionRandom(7));
+    expect(travel).toEqual({ bend: 0, correctionMs: 0, through: { x: 150, y: 120 } });
   });
 });
