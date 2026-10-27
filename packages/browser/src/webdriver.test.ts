@@ -13,6 +13,7 @@ import {
   type VideoEncoder,
   WebDriverBrowserDriver,
   type WebDriverTransport,
+  opensNewShot,
 } from "./webdriver.js";
 
 const elementKey = "element-6066-11e4-a52e-4f735466cecf";
@@ -1668,4 +1669,18 @@ it('uses a private per-session hosted profile and removes it after disposal or f
   await expect(failed.createContext(contextOptions())).rejects.toThrow('launch_failed');
   expect(await readdir(root)).toEqual([]);
  }finally{vi.unstubAllEnvs();await rm(root,{recursive:true,force:true});}
+});
+
+describe("new shot hold", () => {
+  const viewport = { width: 1440, height: 900 };
+  it("holds the first press and one far from or long after the last", () => {
+    expect(opensNewShot(null, { x: 700, y: 400 }, viewport, 10_000)).toBe(true);
+    expect(opensNewShot({ x: 200, y: 200, atMs: 9_000 }, { x: 1_200, y: 700 }, viewport, 10_000)).toBe(true);
+    expect(opensNewShot({ x: 700, y: 400, atMs: 0 }, { x: 720, y: 410 }, viewport, 10_000)).toBe(true);
+  });
+
+  it("presses at once inside the current shot", () => {
+    // The next field of the same form, a second later: the camera is already there.
+    expect(opensNewShot({ x: 700, y: 400, atMs: 9_000 }, { x: 760, y: 470 }, viewport, 10_000)).toBe(false);
+  });
 });
