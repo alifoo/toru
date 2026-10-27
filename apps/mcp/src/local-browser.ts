@@ -13,9 +13,11 @@ import {decodeLocal,LOCAL_METHODS,MAX_LOCAL_JSON,MAX_LOCAL_VIDEO,type LocalComma
 import {DEFAULT_WINDOW_SIZE,desktopWindow,type WindowSizePreset} from './desktop-window.js';
 
 type Pending={command:LocalCommand;sent:boolean;resolve(value:unknown):void;reject(error:Error):void;timer:NodeJS.Timeout;video?:Buffer};
-type Device={control?:boolean;windowSize?:WindowSizePreset;onDisconnect?:()=>void;captureId?:string;durable?:boolean;generation?:number;lastSeen?:number;mode:"browser"|"desktop";id:string;owner:string;url:string;codeHash?:string;tokenHash?:string;expiresAt:number;ready:boolean;claimed:boolean;closed:boolean;authorize:()=>Promise<boolean>;pending?:Pending;wake?:()=>void};
+type Device={appVersion?:string;control?:boolean;windowSize?:WindowSizePreset;onDisconnect?:()=>void;captureId?:string;durable?:boolean;generation?:number;lastSeen?:number;mode:"browser"|"desktop";id:string;owner:string;url:string;codeHash?:string;tokenHash?:string;expiresAt:number;ready:boolean;claimed:boolean;closed:boolean;authorize:()=>Promise<boolean>;pending?:Pending;wake?:()=>void};
 const digest=(value:string)=>createHash('sha256').update(value).digest('hex');
-const DESKTOP_CONTROL_METHODS:readonly string[]=['readPage','pageText','pointer','formInput','typeText','pressKey','scrollBy','redactSensitiveText'];
+/** The first Toru for Mac that draws gestures. */
+const GESTURE_APP_VERSION='0.4.5';
+const DESKTOP_CONTROL_METHODS:readonly string[]=['readPage','pageText','pointer','gesture','formInput','typeText','pressKey','scrollBy','redactSensitiveText'];
 /** One-time pairing code lifetime. Only local smoke tests raise it; bounded to 30 minutes. */
 const pairingTtlMs=()=>{const raw=Number(process.env.LOCAL_BROWSER_PAIR_TTL_MS);return Number.isFinite(raw)&&raw>=60000&&raw<=30*60000?raw:5*60000;};
 const answer=(res:ServerResponse,status:number,value:unknown)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(value));};
@@ -129,6 +131,8 @@ export class LocalBrowserBridge {
  }
  private command(d:Device,method:LocalMethod,args:unknown[]):Promise<unknown>{
   // A Mac whose user allowed it also answers the page methods, so Jev can operate the shared window.
+  // A Mac app before 0.4.5 ends the share on a method it does not know: gestures go only to apps that have them.
+  if(method==='gesture'&&d.mode==='desktop'&&compareVersions(d.appVersion,GESTURE_APP_VERSION)<0)return Promise.reject(new Error('local_method_forbidden'));
   const desktopControl=d.mode==='desktop'&&d.control===true&&DESKTOP_CONTROL_METHODS.includes(method);
   if(d.mode==='desktop'&&!desktopControl&&!['currentUrl','startRecording','stopRecording','screenshot','dispose','markDemoMoment','listSources','selectSource'].includes(method))return Promise.reject(new Error('desktop_capture_only'));
   if(d.mode!=='desktop'&&['listSources','selectSource'].includes(method))return Promise.reject(new Error('local_method_forbidden'));
@@ -164,7 +168,7 @@ export class LocalBrowserBridge {
     delete d.codeHash;
     if(d.mode==='desktop'&&input.persistent===true){
      const credentials=await this.store(store=>store.register(d.owner,typeof input.deviceName==='string'?input.deviceName:'Mac',Date.now(),d.id));
-     d.durable=true;d.tokenHash=digest(credentials.accessToken);d.lastSeen=Date.now();d.expiresAt=Date.now()+30*60000;
+     d.durable=true;d.tokenHash=digest(credentials.accessToken);d.lastSeen=Date.now();if(typeof appVersion==='string')d.appVersion=appVersion;d.expiresAt=Date.now()+30*60000;
      answer(res,200,{...credentials,token:credentials.accessToken,connectionId:d.id,mode:d.mode,url:d.url});return true;
     }
     const token=randomBytes(32).toString('base64url');d.tokenHash=digest(token);d.expiresAt=Date.now()+30*60000;
@@ -181,7 +185,7 @@ export class LocalBrowserBridge {
      d={id:identity.id,owner:identity.owner,mode:'desktop',url:siteUrl,durable:true,expiresAt:Date.now()+30*60000,ready:false,claimed:false,closed:true,authorize:async()=>false};
      this.devices.set(d.id,d);
     }
-    d.tokenHash=digest(token);d.lastSeen=Date.now();
+    d.tokenHash=digest(token);d.lastSeen=Date.now();if(typeof appVersion==='string')d.appVersion=appVersion;
     // A live durable Mac keeps its lease while it keeps polling; consent still ends with every recording or Stop sharing.
     if(!d.closed)d.expiresAt=Math.max(d.expiresAt,Date.now()+30*60000);
    }

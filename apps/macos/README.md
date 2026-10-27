@@ -43,6 +43,7 @@ Focused checks (no screen permission):
 ```sh
 swiftc -parse-as-library apps/macos/Sources/CaptureGeometry.swift apps/macos/Tests/CaptureGeometryTests.swift -o /tmp/toru-geometry-tests && /tmp/toru-geometry-tests
 swiftc -parse-as-library apps/macos/Sources/WindowSizing.swift apps/macos/Tests/WindowSizingTests.swift -o /tmp/toru-window-tests && /tmp/toru-window-tests
+swiftc -parse-as-library apps/macos/Sources/InputDriver.swift apps/macos/Sources/AccessibilityOutline.swift apps/macos/Sources/VisualOutline.swift apps/macos/Tests/InputDriverMotionTests.swift -o /tmp/toru-motion-tests && /tmp/toru-motion-tests
 ```
 
 ## Boundaries

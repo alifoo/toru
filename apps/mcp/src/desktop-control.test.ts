@@ -8,9 +8,9 @@ import {afterEach,expect,it,vi} from 'vitest';
 import {LocalBrowserBridge} from './local-browser.js';
 import {openRecorderStore} from './store/open.js';
 
-async function post(bridge:LocalBrowserBridge,path:string,value:unknown={},token?:string){
+async function post(bridge:LocalBrowserBridge,path:string,value:unknown={},token?:string,appVersion?:string){
  const req=Readable.from([Buffer.from(JSON.stringify(value))]) as IncomingMessage;
- req.method='POST';req.headers=token?{authorization:`Bearer ${token}`}:{};
+ req.method='POST';req.headers={...(token?{authorization:`Bearer ${token}`}:{}),...(appVersion?{'x-toru-app-version':appVersion}:{})};
  const res=new EventEmitter() as ServerResponse;
  let status=0,body='';
  res.writeHead=((code:number)=>{status=code;return res;}) as ServerResponse['writeHead'];
@@ -61,4 +61,18 @@ it('keeps a capture-only Mac capture-only',async()=>{
  const driver=await bridge.createContext('owner',id,options);
  await expect(driver.readPage({filter:'interactive'})).rejects.toThrow('desktop_capture_only');
  await expect(driver.typeText('hello')).rejects.toThrow('desktop_capture_only');
+});
+
+it('sends gestures only to a Mac app that draws them; an older one is never asked',async()=>{
+ const {bridge,id,token}=await connected(true);
+ const driver=await bridge.createContext('owner',id,{...options,captureId:'00000000-0000-4000-8000-000000000002'});
+ const gesture=(driver as unknown as {gesture(kind:string,target:unknown):Promise<unknown>}).gesture.bind(driver);
+ await post(bridge,'ready',{captureConsent:true,control:true},token,'0.4.4');
+ await expect(gesture('circle',{type:'ref',ref:'ref_1'})).rejects.toThrow('local_method_forbidden');
+ await post(bridge,'ready',{captureConsent:true,control:true},token,'0.4.5');
+ const circled=gesture('circle',{type:'ref',ref:'ref_1'});
+ const {value:{command}}=await post(bridge,'poll',{},token,'0.4.5');
+ expect(command).toMatchObject({method:'gesture',args:['circle',{type:'ref',ref:'ref_1'}]});
+ await post(bridge,'result/'+command.id,{value:null},token,'0.4.5');
+ await circled;
 });

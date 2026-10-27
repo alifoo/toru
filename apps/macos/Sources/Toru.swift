@@ -963,7 +963,7 @@ final class Studio: ObservableObject {
                         guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { throw ToruError(message: "Preview unavailable") }
                         result = ["body": ["$bytes": png.base64EncodedString()], "contentType": "image/png", "redactionPassed": false]
                     case "markDemoMoment": break // Cursor is captured natively; no synthetic overlays in this preview.
-                    case "readPage", "pageText", "pointer", "formInput", "typeText", "pressKey", "scrollBy", "redactSensitiveText":
+                    case "readPage", "pageText", "pointer", "gesture", "formInput", "typeText", "pressKey", "scrollBy", "redactSensitiveText":
                         let operated = try desktopControl()
                         let arguments = command["args"] as? [Any] ?? []
                         result = try await Task.detached { try operated.handle(method, arguments) }.value
