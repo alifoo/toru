@@ -628,6 +628,37 @@ export class Recorder {
           };
           await driver.pointer('move', target); break;
         }
+        case 'browser_point':
+        case 'browser_trace':
+        case 'browser_sweep': {
+          // Data is rarely clickable, so the outline has no ref for a number or a cell: a point on screen names it then.
+          const target = typeof args.ref === 'string' ? { type: 'ref' as const, ref: args.ref } : {
+            type: 'coordinate' as const, x: z.number().min(0).max(1919).parse(args.x), y: z.number().min(0).max(1079).parse(args.y),
+          };
+          const kind = name === 'browser_point' ? 'point' : name === 'browser_sweep' ? 'sweep' : z.enum(['circle', 'underline']).parse(args.shape);
+          const options = name === 'browser_sweep' && args.rows !== undefined ? { rows: z.number().int().min(1).max(5).parse(args.rows) } : undefined;
+          // A driver without gestures (Toru for Chrome before them, a Mac window) still points the cursor at the element.
+          try {
+            if (!driver.gesture) throw new Error('local_method_forbidden');
+            await driver.gesture(kind, target, options);
+          } catch (error) {
+            if (!['local_method_forbidden', 'desktop_capture_only'].includes((error as Error).message)) throw error;
+            await driver.pointer('move', target);
+          }
+          break;
+        }
+        case 'browser_read': {
+          // Reading down a long page: smooth steps of 300–600px with a pause to read after each (docs/gestos-humanos.md).
+          const total = z.number().int().min(300).max(3000).parse(args.amount ?? 1200);
+          const at = { type: 'coordinate' as const, x: z.number().min(0).max(1919).parse(args.x ?? 960), y: z.number().min(0).max(1079).parse(args.y ?? 540) };
+          for (let read = 0; read < total;) {
+            this.assertActive(active);
+            const step = Math.min(total - read, 300 + Math.round(Math.random() * 300));
+            await driver.scrollBy(at, 'down', step); read += step;
+            await new Promise(resolve => setTimeout(resolve, 600 + Math.round(Math.random() * 300)));
+          }
+          break;
+        }
         case 'browser_type': {
           const value = z.string().max(10_000).parse(args.text);
           if (typeof args.ref === 'string') await driver.formInput(args.ref, value);

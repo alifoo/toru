@@ -22,7 +22,7 @@ type Driver = Awaited<ReturnType<WebDriverBrowserDriver['createContext']>> & {
   recordingMode?: string | null; recordingStartedAtMs?: number | null;
   pointerTrail?(): unknown[]; pointerTelemetry?(): unknown[]; semanticTimeline?(): unknown[]; identitySightings?(): unknown[];
 };
-const METHODS = ['open', 'goto', 'currentUrl', 'readPage', 'pageText', 'screenshot', 'pointer', 'formInput', 'typeText', 'pressKey', 'scrollBy',
+const METHODS = ['open', 'goto', 'currentUrl', 'readPage', 'pageText', 'screenshot', 'pointer', 'gesture', 'formInput', 'typeText', 'pressKey', 'scrollBy',
   'redactSensitiveText', 'startRecording', 'stopRecording', 'markDemoMoment', 'dispose'];
 const FORWARDED = ['local_sign_in_required', 'local_navigation_blocked', 'local_method_forbidden', 'extension_tab_closed', 'extension_debugger_unavailable'];
 

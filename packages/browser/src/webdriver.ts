@@ -13,6 +13,7 @@ import {
   findElementsScript,
   maximumPageReadCharacters,
   type PageReadFilter,
+  type GestureKind,
   type PointerKind,
   pageTextScript,
   readPageScript,
@@ -85,8 +86,91 @@ const typeCharacterMs = 95;
 const typeJitterMs = 75;
 /** Interval between interpolated pointer positions, near display rate. */
 const pointerStepMs = 16;
-/** The beat after a travel that lets hover styling register. */
-const travelPauseMs = 160;
+type Point = { x: number; y: number };
+
+/** A small seeded generator (mulberry32): the same recording seed gives the same gestures. */
+export function motionRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
+  };
+}
+
+/** Minimum-jerk progress: the bell-shaped speed of a reaching hand (docs/gestos-humanos.md). */
+export function minimumJerk(progress: number): number {
+  const p = Math.min(1, Math.max(0, progress));
+  return p * p * p * (10 - 15 * p + 6 * p * p);
+}
+
+/**
+ * How one travel deviates from a straight line, as docs/gestos-humanos.md measures a hand: a bow of 2–6% of the
+ * distance to one side (none under 80px); on 15% of trips over 400px it passes the target by 4–10px, otherwise on 30%
+ * of trips over 300px it lands 2–8px off; either way a 120–220ms corrective submovement brings it home.
+ */
+export type HumanTravel = { through: Point; bend: number; correctionMs: number };
+
+export function planHumanTravel(from: Point, to: Point, random: () => number): HumanTravel {
+  const distance = Math.hypot(to.x - from.x, to.y - from.y);
+  const bend = distance < 80 ? 0 : (random() < 0.5 ? -1 : 1) * (0.02 + random() * 0.04) * distance;
+  const correctionMs = () => Math.round(120 + random() * 100);
+  if (distance > 400 && random() < 0.15) {
+    const past = 4 + random() * 6;
+    return { bend, correctionMs: correctionMs(), through: {
+      x: Math.round(to.x + (to.x - from.x) / distance * past), y: Math.round(to.y + (to.y - from.y) / distance * past) } };
+  }
+  if (distance > 300 && random() < 0.3) {
+    const angle = random() * Math.PI * 2, off = 2 + random() * 6;
+    return { bend, correctionMs: correctionMs(), through: { x: Math.round(to.x + Math.cos(angle) * off), y: Math.round(to.y + Math.sin(angle) * off) } };
+  }
+  return { bend, correctionMs: 0, through: to };
+}
+
+/** Where the main movement of `travel` is at `progress` (0–1 of its duration): minimum jerk along a bowed path. */
+export function humanTravelPoint(from: Point, travel: HumanTravel, progress: number): Point {
+  const eased = minimumJerk(progress);
+  const dx = travel.through.x - from.x, dy = travel.through.y - from.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const bow = travel.bend * Math.sin(Math.PI * eased);
+  return {
+    x: Math.round(from.x + dx * eased - dy / length * bow),
+    y: Math.round(from.y + dy * eased + dx / length * bow),
+  };
+}
+type Box = { x: number; y: number; width: number; height: number };
+
+/** A point on one clockwise loop around `box`, `margin` px out, from its upper-left at 0 back there at 1. */
+export function circlePoint(box: Box, margin: number, progress: number): Point {
+  const angle = -0.75 * Math.PI + 2 * Math.PI * minimumJerk(progress);
+  return {
+    x: Math.round(box.x + box.width / 2 + Math.cos(angle) * (box.width / 2 + margin)),
+    y: Math.round(box.y + box.height / 2 + Math.sin(angle) * (box.height / 2 + margin)),
+  };
+}
+
+/** A point on a stroke 6px under `box`, left to right. */
+export function underlinePoint(box: Box, progress: number): Point {
+  return { x: Math.round(box.x + box.width * minimumJerk(progress)), y: Math.round(box.y + box.height + 6) };
+}
+
+/** Labels of the presses that change state, before which a presenter hesitates (docs/gestos-humanos.md). */
+const committingLabel = /(?:^|\s)(?:criar|enviar|ativar|publicar|confirmar|salvar|lançar|create|send|activate|publish|confirm|save|launch|submit)\b/iu;
+
+/**
+ * The rows to sweep. Agents name a list by something clickable in it (a link in the first row), so an element inside a
+ * table or list sweeps that table or list, from its own row down; an element holding rows sweeps them from the top.
+ */
+const rowsScript = `const e=arguments[0],n=arguments[1],W=innerWidth,H=innerHeight;
+const seen=r=>r.width>0&&r.height>0&&r.bottom>0&&r.top<H&&r.right>0&&r.left<W;
+const rowsOf=root=>{let rows=[...root.querySelectorAll('tbody tr,[role=row]')].filter(r=>!r.querySelector('th'));if(!rows.length)rows=[...root.querySelectorAll('li,[role=listitem]')];return rows;};
+let rows=rowsOf(e),from=0;
+if(!rows.length){const host=e.closest('table,[role=table],[role=grid],ul,ol,[role=list]');if(host){rows=rowsOf(host);const own=e.closest('tr,[role=row],li,[role=listitem]');from=Math.max(0,rows.indexOf(own));}}
+if(!rows.length)rows=[...e.children];
+return rows.slice(from).map(r=>r.getBoundingClientRect()).filter(seen).slice(0,n).map(r=>({x:r.left,y:r.top,width:r.width,height:r.height}));`;
+
 /**
  * The extra beat before pressing a target that opens a new shot (far from the last press, or long after it).
  * The renderer's camera needs about a second to reach a new framing; a press right after a 550ms travel landed
@@ -492,6 +576,8 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
   recordingFailure: Error | null = null;
   screencast: CdpScreencastRecorder | null = null;
   recordingStartedAtMs: number | null = null;
+  /** Seeded at each recording's start, so its gestures vary between trips but not between re-runs of a seed. */
+  private motion: () => number = motionRandom(1);
   private lastRecordedRoute: string | undefined;
   /**
    * Which of the two recorders actually ran.
@@ -710,17 +796,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       y: Math.round(numeric(centre.h, 720) / 2),
     };
 
-    const move = (x: number, y: number) =>
-      this.transport.request("POST", `${this.basePath}/actions`, {
-        actions: [
-          {
-            type: "pointer",
-            id: "mouse",
-            parameters: { pointerType: "mouse" },
-            actions: [{ type: "pointerMove", origin: "viewport", x, y, duration: 0 }],
-          },
-        ],
-      });
+    const move = (x: number, y: number) => this.pointerMoveRequest(x, y);
     if (this.recordingStartedAtMs === null) {
       await this.command("pointer_move", () => move(targetX, targetY));
       this.pointerAt = { x: targetX, y: targetY };
@@ -728,50 +804,92 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       return true;
     }
 
-    /**
-     * Stepped here rather than by handing the driver one long move: ChromeDriver satisfies a move's
-     * duration with only a handful of intermediate events, which is neither a path to smooth nor
-     * motion a viewer reads as a hand.
-     *
-     * Every step is placed by the clock, not by its index. A driver delivers each move and waits for
-     * the page to take it, and a heavy page (Notion re-rendering a board) takes anything from one
-     * frame to several. Counting steps let those waits add up to twice the travel, which renders as
-     * a cursor dragging toward its target; reading the clock makes a slow page cost smoothness
-     * (fewer, longer steps) instead of time.
-     */
     const travelMs = Math.min(
       1_200,
       pointerTravelMs + Math.hypot(targetX - from.x, targetY - from.y) * 0.5,
     );
+    const target = { x: targetX, y: targetY };
+    const travel = planHumanTravel(from, target, this.motion);
     await this.command("pointer_move", async () => {
-      const startedAt = performance.now();
-      const maximumSteps = Math.ceil(travelMs / pointerStepMs) * 2;
-      let at = from;
-      for (let step = 0; ; step++) {
-        const stepStartedAt = performance.now();
-        const progress =
-          step >= maximumSteps ? 1 : Math.min(1, (stepStartedAt - startedAt) / travelMs);
-        const eased = progress * progress * (3 - 2 * progress);
-        const next = {
-          x: Math.round(from.x + (targetX - from.x) * eased),
-          y: Math.round(from.y + (targetY - from.y) * eased),
-        };
-        if (next.x !== at.x || next.y !== at.y || progress === 1) {
-          await move(next.x, next.y);
-          this.recordDriverSample(next.x, next.y, "move", progress === 1 ? arrivalShape : this.driverShape);
-        }
-        at = next;
-        if (progress === 1) break;
-        await delay(Math.max(0, pointerStepMs - (performance.now() - stepStartedAt)));
+      this.pointerAt = from;
+      await this.glidePointer(travelMs, progress => humanTravelPoint(from, travel, progress),
+        travel.correctionMs === 0 ? arrivalShape : undefined);
+      if (travel.correctionMs > 0) {
+        // The corrective submovement: short, straight and bell-shaped, from where the reach ended onto the target.
+        const landed = this.pointerAt!;
+        await this.glidePointer(travel.correctionMs, progress => {
+          const eased = minimumJerk(progress);
+          return { x: Math.round(landed.x + (targetX - landed.x) * eased), y: Math.round(landed.y + (targetY - landed.y) * eased) };
+        }, arrivalShape);
       }
-      // A short beat lets hover styling register without making the cursor trail the intent.
-      await delay(travelPauseMs);
+      // A short beat lets hover styling register, the "fraction of a second" a presenter rests on a target.
+      await delay(250 + Math.round(this.motion() * 150));
     });
     this.pointerAt = { x: targetX, y: targetY };
     this.driverShape = arrivalShape;
     // Save the travel before a click can navigate and destroy the page's event buffer.
     await this.drainTelemetry();
     return true;
+  }
+
+  private pointerMoveRequest(x: number, y: number): Promise<unknown> {
+    return this.transport.request("POST", `${this.basePath}/actions`, {
+      actions: [
+        {
+          type: "pointer",
+          id: "mouse",
+          parameters: { pointerType: "mouse" },
+          actions: [{ type: "pointerMove", origin: "viewport", x, y, duration: 0 }],
+        },
+      ],
+    });
+  }
+
+  /**
+   * Moves the pointer along `place` over `durationMs`, from wherever it is, recording each step.
+   *
+   * Stepped here rather than by handing the driver one long move: ChromeDriver satisfies a move's duration with only
+   * a handful of intermediate events, which is neither a path to smooth nor motion a viewer reads as a hand.
+   *
+   * Every step is placed by the clock, not by its index. A driver delivers each move and waits for the page to take
+   * it, and a heavy page (Notion re-rendering a board) takes anything from one frame to several. Counting steps let
+   * those waits add up to twice the travel, which renders as a cursor dragging toward its target; reading the clock
+   * makes a slow page cost smoothness (fewer, longer steps) instead of time.
+   */
+  private async glidePointer(durationMs: number, place: (progress: number) => Point, arrivalShape?: CapturePointerShape): Promise<void> {
+    const startedAt = performance.now();
+    const maximumSteps = Math.ceil(durationMs / pointerStepMs) * 2;
+    let at = this.pointerAt ?? place(0);
+    for (let step = 0; ; step++) {
+      const stepStartedAt = performance.now();
+      const progress = step >= maximumSteps ? 1 : Math.min(1, (stepStartedAt - startedAt) / Math.max(1, durationMs));
+      const next = place(progress);
+      if (next.x !== at.x || next.y !== at.y || progress === 1) {
+        await this.pointerMoveRequest(next.x, next.y);
+        this.recordDriverSample(next.x, next.y, "move", progress === 1 && arrivalShape ? arrivalShape : this.driverShape);
+      }
+      at = next;
+      this.pointerAt = at;
+      if (progress === 1) break;
+      await delay(Math.max(0, pointerStepMs - (performance.now() - stepStartedAt)));
+    }
+  }
+
+  /** A hand at rest is not still: 1–3px drifts every 400–900ms for `durationMs`. */
+  private async restPointer(durationMs: number): Promise<void> {
+    const until = performance.now() + durationMs;
+    const home = this.pointerAt;
+    while (home && performance.now() < until) {
+      await delay(Math.min(until - performance.now(), 400 + this.motion() * 500));
+      if (performance.now() >= until) break;
+      const angle = this.motion() * Math.PI * 2, off = 1 + this.motion() * 2;
+      const from = this.pointerAt ?? home;
+      const to = { x: Math.round(home.x + Math.cos(angle) * off), y: Math.round(home.y + Math.sin(angle) * off) };
+      await this.glidePointer(120, progress => {
+        const eased = minimumJerk(progress);
+        return { x: Math.round(from.x + (to.x - from.x) * eased), y: Math.round(from.y + (to.y - from.y) * eased) };
+      });
+    }
   }
 
   /**
@@ -1942,6 +2060,8 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       [{ [elementKey]: element }]);
     const measured = await this.measurePointer(element, point);
     await this.movePointerTo(element, point);
+    // A presenter hesitates over the press that changes something ("Criar", "Enviar", "Ativar").
+    if (committingLabel.test(semanticElement)) await this.restPointer(400 + this.motion() * 300);
     const presses = kind === "double_click" ? 2 : kind === "triple_click" ? 3 : 1;
     const button = kind === "right_click" ? 2 : 0;
     const sentAt = Date.now();
@@ -1972,6 +2092,78 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       target.type === "ref" ? target.ref : null,
       semanticElement,
     );
+    await this.afterComputerInteraction();
+  }
+
+  /**
+   * A gesture that shows rather than presses (docs/gestos-humanos.md): rest on an element, circle or underline it, or
+   * sweep down the first rows of a list or table. Recorded as an `emphasis` moment with the element's box, so the
+   * camera frames it. Off camera there is nothing to show and nothing happens.
+   */
+  async gesture(kind: GestureKind, target: BrowserTarget, options: { rows?: number } = {}): Promise<void> {
+    const element = await this.elementForTarget(target);
+    await this.assertElementAllowed(element);
+    if (this.recordingStartedAtMs === null) return;
+    // An element scrolled past (a table row now under the header) is brought back first: a gesture at nothing frames nothing.
+    await this.scrollIntoViewSmoothly(element);
+    const measured = await this.executeScript("gesture_box",
+      "const r=arguments[0].getBoundingClientRect();return {x:r.left,y:r.top,width:r.width,height:r.height,w:innerWidth,h:innerHeight};",
+      [{ [elementKey]: element }]);
+    if (!isObject(measured)) throw new WebDriverProtocolError("invalid_pointer_target");
+    const { width: viewWidth, height: viewHeight } = { width: numeric(measured.w, 1_280), height: numeric(measured.h, 720) };
+    const clip = (box: Box): Box => {
+      const x = Math.max(0, box.x), y = Math.max(0, box.y);
+      return { x, y, width: Math.max(1, Math.min(viewWidth, box.x + box.width) - x), height: Math.max(1, Math.min(viewHeight, box.y + box.height) - y) };
+    };
+    let box = clip({ x: Number(measured.x), y: Number(measured.y), width: Number(measured.width), height: Number(measured.height) });
+    const semanticElement = await this.describeSemanticElement(element);
+    // Measured before the pointer sets off, so a list with nothing to sweep is refused before anything moves.
+    let rows: Box[] = [];
+    if (kind === "sweep") {
+      const raw = await this.executeScript("gesture_rows", rowsScript, [{ [elementKey]: element }, Math.min(5, Math.max(1, options.rows ?? 4))]);
+      rows = (Array.isArray(raw) ? raw : []).filter(isObject)
+        .map(row => clip({ x: Number(row.x), y: Number(row.y), width: Number(row.width), height: Number(row.height) }))
+        .filter(row => [row.x, row.y, row.width, row.height].every(Number.isFinite));
+      if (!rows.length) throw new WebDriverProtocolError("no_rows_to_sweep");
+    }
+    const startedAt = Date.now();
+    const inside = (point: Point): Point => ({
+      x: Math.min(viewWidth - 1, Math.max(0, point.x)), y: Math.min(viewHeight - 1, Math.max(0, point.y)) });
+    await this.command(`browser_gesture_${kind}`, async () => {
+      if (kind === "point") {
+        await this.movePointerTo(element, inside({ x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) }));
+        await this.restPointer(800 + this.motion() * 700);
+      } else if (kind === "circle") {
+        await this.movePointerTo(element, inside(circlePoint(box, 12, 0)));
+        await this.glidePointer(900 + this.motion() * 300, progress => inside(circlePoint(box, 12, progress)));
+      } else if (kind === "underline") {
+        await this.movePointerTo(element, inside(underlinePoint(box, 0)));
+        await this.glidePointer(600 + this.motion() * 300, progress => inside(underlinePoint(box, progress)));
+      } else {
+        // Down the left third of each row, where its name usually is, stopping on each one.
+        const along = (row: Box): Point => inside({ x: Math.round(row.x + Math.min(row.width / 3, 240)), y: Math.round(row.y + row.height / 2) });
+        await this.movePointerTo(element, along(rows[0]!));
+        for (const row of rows.slice(1)) {
+          const from = this.pointerAt!, to = along(row);
+          await delay(150);
+          await this.glidePointer(150, progress => {
+            const eased = minimumJerk(progress);
+            return { x: Math.round(from.x + (to.x - from.x) * eased), y: Math.round(from.y + (to.y - from.y) * eased) };
+          });
+        }
+        await delay(150);
+        const top = Math.min(...rows.map(row => row.y)), bottom = Math.max(...rows.map(row => row.y + row.height));
+        const left = Math.min(...rows.map(row => row.x)), right = Math.max(...rows.map(row => row.x + row.width));
+        box = { x: left, y: top, width: right - left, height: bottom - top };
+      }
+    });
+    await this.drainTelemetry();
+    const recordingStart = this.recordingStartedAtMs ?? startedAt;
+    this.semanticActions.push({
+      atMs: Math.max(0, startedAt - recordingStart), endMs: Math.max(0, Date.now() - recordingStart),
+      type: "emphasis", ref: target.type === "ref" ? target.ref : null, element: `${kind} ${semanticElement}`.slice(0, 120),
+      focus: { x: box.x / viewWidth, y: box.y / viewHeight, width: box.width / viewWidth, height: box.height / viewHeight },
+    });
     await this.afterComputerInteraction();
   }
 
@@ -2118,6 +2310,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       [],
     ).catch(() => undefined);
     this.recordingStartedAtMs = Date.now();
+    this.motion = motionRandom(this.recordingStartedAtMs);
     await this.installTelemetryCollector();
     await this.readIdentity();
     if (this.debuggerAddress) {

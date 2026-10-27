@@ -16,7 +16,8 @@ export type RunState = 'planning' | 'connecting' | 'awaiting_code' | 'navigating
 const ACTIVE: readonly RunState[] = ['planning', 'connecting', 'awaiting_code', 'navigating', 'needs_input', 'agent_driving', 'recording', 'rendering'];
 const WAITS_FOR_USER: readonly RunState[] = ['needs_input', 'awaiting_code'];
 /** Calls on a driving run's session that count as the agent's actions in the run. */
-const AGENT_ACTIONS = new Set(['browser_click', 'browser_type', 'browser_key', 'browser_scroll', 'browser_select', 'browser_navigate']);
+const AGENT_ACTIONS = new Set(['browser_click', 'browser_type', 'browser_key', 'browser_scroll', 'browser_select', 'browser_navigate',
+  'browser_point', 'browser_trace', 'browser_sweep', 'browser_read']);
 /** Only the run stops its own capture, after holding on the result. An agent that stops it the step-by-step way (an MCP
  * client that listed its tools before recording_run_finish existed does) finishes the run instead: stop = reached. */
 const FINISHES_RUN: Record<string, 'reached' | 'stuck'> = { recording_stop: 'reached', recording_cancel: 'stuck', session_close: 'stuck' };

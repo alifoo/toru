@@ -727,3 +727,36 @@ it('records the raw video size of a capture at a device scale, keeping coordinat
   expect(config.cursorScale).toBe(2);
  }finally{await recorder.close();await rm(dir,{recursive:true,force:true});}
 });
+
+it('makes gestures with the driver, falls back to pointing on one without them, and reads a page in steps', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'recorder-gestures-'));
+  const owner = randomUUID();
+  const driver: Record<string, unknown> & { pointer: ReturnType<typeof vi.fn>; gesture?: ReturnType<typeof vi.fn>; scrollBy: ReturnType<typeof vi.fn> } = {
+    goto: vi.fn(async () => undefined), dispose: vi.fn(async () => undefined), startRecording: vi.fn(async () => undefined),
+    recordingMode: 'screencast' as const, redactSensitiveText: vi.fn(async () => undefined),
+    pointer: vi.fn(async () => undefined), gesture: vi.fn(async () => undefined), scrollBy: vi.fn(async () => undefined),
+    readPage: vi.fn(async () => '[ref_1] row Acme — visible at (10,10) viewport CSS pixels'), currentUrl: vi.fn(async () => 'https://example.com'),
+    screenshot: vi.fn(async () => ({ body: Buffer.from('frame'), contentType: 'image/png', redactionPassed: true })),
+  };
+  const recorder = new Recorder({ dataDir: dir, encryptionKey: randomBytes(32),
+    createContext: vi.fn(async () => driver) as unknown as RecorderOptions['createContext'], render: vi.fn() });
+  try {
+    await recorder.initialize();
+    const id = String((await recorder.call(owner, 'session_open', { url: 'https://example.com' })).structuredContent?.id);
+    await recorder.call(owner, 'recording_start', { id });
+    await recorder.call(owner, 'browser_trace', { id, ref: 'ref_1', shape: 'circle' });
+    await recorder.call(owner, 'browser_sweep', { id, ref: 'ref_1', rows: 3 });
+    expect(driver.gesture).toHaveBeenCalledWith('circle', { type: 'ref', ref: 'ref_1' }, undefined);
+    expect(driver.gesture).toHaveBeenCalledWith('sweep', { type: 'ref', ref: 'ref_1' }, { rows: 3 });
+    driver.gesture!.mockRejectedValueOnce(new Error('local_method_forbidden'));
+    await recorder.call(owner, 'browser_point', { id, ref: 'ref_1' });
+    expect(driver.pointer).toHaveBeenCalledWith('move', { type: 'ref', ref: 'ref_1' });
+    // A number or a cell has no ref: a point on screen names it.
+    await recorder.call(owner, 'browser_trace', { id, x: 640, y: 300, shape: 'underline' });
+    expect(driver.gesture).toHaveBeenCalledWith('underline', { type: 'coordinate', x: 640, y: 300 }, undefined);
+    await recorder.call(owner, 'browser_read', { id, amount: 900 });
+    const scrolled = driver.scrollBy.mock.calls.map(call => call[2] as number);
+    expect(scrolled.reduce((sum, step) => sum + step, 0)).toBe(900);
+    expect(scrolled.every(step => step <= 600)).toBe(true);
+  } finally { await recorder.close(); await rm(dir, { recursive: true, force: true }); }
+}, 20_000);

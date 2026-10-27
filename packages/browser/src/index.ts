@@ -354,6 +354,7 @@ export type CaptureSemanticAction = {
     | "navigate"
     | "setup"
     | "action"
+    | "emphasis"
     | "result";
   ref: string | null;
   element: string;
