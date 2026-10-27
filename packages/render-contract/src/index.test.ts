@@ -26,6 +26,7 @@ import {
   removableSpans,
   videoDensity,
   outputTimeMs,
+  reviewCamera,
   type CaptureLayers,
 } from "./index.js";
 
@@ -1192,5 +1193,95 @@ describe("output time", () => {
   it("shrinks sped-up time without counting a cut twice", () => {
     expect(outputTimeMs(4_000, { cuts: [], speeds: [{ startMs: 0, endMs: 4_000, speed: 2 }] })).toBe(2_000);
     expect(outputTimeMs(4_000, { cuts: [{ startMs: 0, endMs: 2_000 }], speeds: [{ startMs: 0, endMs: 4_000, speed: 2 }] })).toBe(1_000);
+  });
+});
+
+describe("directed pacing", () => {
+  const next = (atMs: number) => ({ type: "click" as const, atMs, ref: null, element: "button Próximo" });
+
+  it("never zooms on a click that only moves the flow on", () => {
+    const step = click(3_000, { x: 0.8, y: 0.9 });
+    expect(proposeZoomRegions([step], 20_000, [], [], true)).toHaveLength(1);
+    expect(proposeZoomRegions([step], 20_000, [], [next(3_000)], true)).toHaveLength(0);
+    expect(proposeZoomRegions([step], 20_000, [], [{ type: "navigate", atMs: 3_900, ref: null, element: "Page changed" }], true))
+      .toHaveLength(0);
+    // Only in a directed demo; the legacy camera is unchanged.
+    expect(proposeZoomRegions([step], 20_000, [], [next(3_000)], false)).toHaveLength(1);
+  });
+
+  it("starts a new shot after the flow moves on and is wide when the step button is pressed", () => {
+    const pointers = [click(2_000, { x: 0.5, y: 0.5 }), click(5_000, { x: 0.52, y: 0.56 }), click(9_000, { x: 0.5, y: 0.5 })];
+    const regions = proposeZoomRegions(pointers, 20_000, [], [next(5_000)], true);
+    expect(regions).toHaveLength(2);
+    expect(regions[0]!.endMs).toBeLessThanOrEqual(5_000 - 1_016 - 400);
+    expect(regions[1]!.startMs).toBeGreaterThan(5_000);
+  });
+
+  it("holds one shot across clicks inside the same panel", () => {
+    const panel = { x: 0.18, y: 0.2, width: 0.44, height: 0.3 };
+    const apart = [click(2_000, { x: 0.2, y: 0.3 }), click(4_000, { x: 0.6, y: 0.3 })];
+    expect(proposeZoomRegions(apart, 20_000, [], [], true)).toHaveLength(2);
+    const inPanel = apart.map(pointer => ({ ...pointer, container: panel }));
+    const regions = proposeZoomRegions(inPanel, 20_000, [], [], true);
+    expect(regions).toHaveLength(1);
+    expect(regions[0]!.focus.cx).toBeCloseTo(0.4);
+    expect(regions[0]!.focus.cy).toBeCloseTo(0.35);
+  });
+
+  it("keeps at most four zooms a minute, and never drops typing or the result", () => {
+    const pointers = Array.from({ length: 7 }, (_unused, index) =>
+      click(2_000 + index * 8_000, { x: index % 2 ? 0.8 : 0.2, y: index % 2 ? 0.8 : 0.2 }));
+    const timeline = [{ type: "result" as const, atMs: 55_000, ref: null, element: "Done", focus: { x: 0.3, y: 0.3, width: 0.3, height: 0.3 } }];
+    expect(proposeZoomRegions(pointers, 62_000, [], [], true)).toHaveLength(4);
+    const regions = proposeZoomRegions(pointers, 62_000, [], timeline, true);
+    expect(regions.filter(region => region.intent !== "result").length).toBeLessThanOrEqual(4);
+    expect(regions.some(region => region.intent === "result")).toBe(true);
+    for (const region of regions) {
+      expect(regions.filter(other => other.startMs <= region.startMs && other.startMs > region.startMs - 60_000).length)
+        .toBeLessThanOrEqual(5);
+    }
+  });
+
+  it("does not pull out for less than two seconds between two zooms", () => {
+    const pointers = [click(2_000, { x: 0.2, y: 0.2 }), click(5_500, { x: 0.8, y: 0.8 })];
+    const regions = proposeZoomRegions(pointers, 20_000, [], [], true);
+    for (let index = 1; index < regions.length; index++) {
+      const gap = regions[index]!.startMs - regions[index - 1]!.endMs;
+      expect(gap === 0 || gap >= 2_000).toBe(true);
+    }
+    expect(regions).toHaveLength(1);
+  });
+});
+
+describe("camera review", () => {
+  const directed = { pointerTrail: [click(5_000)], directed: true };
+
+  it("passes the camera this package proposes for a directed demo", () => {
+    const pointers = Array.from({ length: 7 }, (_unused, index) =>
+      click(2_000 + index * 3_000, { x: index % 2 ? 0.8 : 0.2, y: index % 3 ? 0.7 : 0.2 }));
+    const capture = { width: 1440, height: 900, frameRate: 30, durationMs: 30_000, pointerTrail: pointers,
+      pointerTelemetry: [], directed: true,
+      semanticTimeline: [{ type: "click" as const, atMs: 8_000, ref: null, element: "button Próximo" }] };
+    expect(reviewCamera(buildExporterConfig(capture), capture)).toEqual([]);
+  });
+
+  it("flags a camera still moving when the click lands", () => {
+    expect(reviewCamera({ zoomRegions: [{ startMs: 4_800, endMs: 9_000 }] }, directed)).toEqual(["camera_late"]);
+    expect(reviewCamera({ zoomRegions: [{ startMs: 1_000, endMs: 4_500 }] }, directed)).toEqual(["camera_late"]);
+    expect(reviewCamera({ zoomRegions: [{ startMs: 4_000, endMs: 9_000 }] }, directed)).toEqual([]);
+  });
+
+  it("flags zooms that pump out and back in or crowd a minute", () => {
+    const quiet = { pointerTrail: [], directed: true };
+    expect(reviewCamera({ zoomRegions: [{ startMs: 1_000, endMs: 4_000 }, { startMs: 5_000, endMs: 8_000 }] }, quiet))
+      .toEqual(["zoom_pumping"]);
+    expect(reviewCamera({ zoomRegions: [{ startMs: 1_000, endMs: 4_000 }, { startMs: 4_000, endMs: 8_000 }] }, quiet)).toEqual([]);
+    const five = Array.from({ length: 5 }, (_unused, index) => ({ startMs: index * 10_000, endMs: index * 10_000 + 3_000 }));
+    expect(reviewCamera({ zoomRegions: five }, quiet)).toEqual(["zoom_pumping"]);
+    expect(reviewCamera({ zoomRegions: [...five.slice(0, 4), { ...five[4]!, intent: "result" }] }, quiet)).toEqual([]);
+  });
+
+  it("only reviews directed demos", () => {
+    expect(reviewCamera({ zoomRegions: [{ startMs: 4_800, endMs: 9_000 }] }, { ...directed, directed: false })).toEqual([]);
   });
 });

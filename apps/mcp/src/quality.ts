@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { CaptureObservation } from '@content-layer/render-contract';
+import { reviewCamera, type CaptureObservation, type ExporterConfig } from '@content-layer/render-contract';
 const run = promisify(execFile);
 
 export type QualityVerdict = {
@@ -9,13 +9,17 @@ export type QualityVerdict = {
   reasons: string[];
   metrics: { durationMs?: number; frames?: number; maxTemporalDiff?: number; maxLumaRange?: number; actions?: number; pointerSamples?: number };
 };
-export type QualityAssessor = (videoPath: string, observation: Partial<CaptureObservation> | undefined) => Promise<QualityVerdict>;
+export type QualityAssessor = (
+  videoPath: string, observation: Partial<CaptureObservation> | undefined, config?: ExporterConfig,
+) => Promise<QualityVerdict>;
 
 /**
  * Decides whether a rendered demo is worth delivering (and charging for): long enough, visibly changing, not a blank
  * frame. A video ffmpeg cannot read is not judged (`skipped`), so unit fixtures and odd encoders are never blocked.
+ * With the render's config, a directed demo's camera is judged too: late on a click, or pumping (`reviewCamera`).
  */
-export const assessDemo: QualityAssessor = async (videoPath, observation) => {
+export const assessDemo: QualityAssessor = async (videoPath, observation, config) => {
+  const camera = config && observation?.pointerTrail ? reviewCamera(config, observation as CaptureObservation) : [];
   const metrics: QualityVerdict['metrics'] = {
     actions: observation?.semanticTimeline?.length ?? 0, pointerSamples: observation?.pointerTrail?.length ?? 0,
   };
@@ -24,9 +28,9 @@ export const assessDemo: QualityAssessor = async (videoPath, observation) => {
     const probe = await run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'json', videoPath], { timeout: 20_000 });
     durationMs = Math.round(Number(JSON.parse(probe.stdout).format?.duration) * 1000);
     if (!Number.isFinite(durationMs)) throw new Error('duration');
-  } catch { return { passed: true, skipped: true, reasons: ['unassessable'], metrics }; }
+  } catch { return { passed: camera.length === 0, skipped: true, reasons: ['unassessable', ...camera], metrics }; }
   metrics.durationMs = durationMs;
-  const reasons: string[] = [];
+  const reasons: string[] = [...camera];
   if (durationMs < 1500) reasons.push('too_short');
   try {
     // Two samples per second: YDIF is the mean absolute difference to the previous frame, YMIN/YMAX the luma range.

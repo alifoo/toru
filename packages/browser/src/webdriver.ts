@@ -108,6 +108,24 @@ export function opensNewShot(
   const dy = (target.y - previous.y) / Math.max(1, viewport.height);
   return Math.hypot(dx, dy) > newShotRadius || nowMs - previous.atMs > newShotGapMs;
 }
+
+/**
+ * The click target and the panel it sits in. The panel is the widest ancestor still at most half the viewport and at
+ * least four times the target: the card, form or filter list a viewer reads as one place, never the page itself.
+ */
+const containerScript = `const e=arguments[0],p=arguments[1],r=e.getBoundingClientRect(),W=innerWidth,H=innerHeight,a=r.width*r.height;
+let c=null;for(let n=e.parentElement;n&&n!==document.body&&n!==document.documentElement;n=n.parentElement){const q=n.getBoundingClientRect(),s=q.width*q.height;if(s>W*H*0.5)break;if(s>=a*4)c=q;}
+return {x:(p?.x??(r.left+r.width/2))/W,y:(p?.y??(r.top+r.height/2))/H,w:r.width/W,h:r.height/H,cursor:getComputedStyle(e).cursor,
+c:c&&{x:Math.max(0,c.left)/W,y:Math.max(0,c.top)/H,w:(Math.min(W,c.right)-Math.max(0,c.left))/W,h:(Math.min(H,c.bottom)-Math.max(0,c.top))/H}};`;
+
+/** The measured panel as `CapturePointer.container`, or nothing when it is missing or off screen. */
+export function containerFrom(raw: unknown): { container: NonNullable<CapturePointer["container"]> } | undefined {
+  if (!isObject(raw)) return undefined;
+  const [x, y, width, height] = [raw.x, raw.y, raw.w, raw.h].map(value => typeof value === "number" && Number.isFinite(value) ? value : Number.NaN);
+  if (![x, y, width, height].every(Number.isFinite) || !(width! > 0 && height! > 0) || x! >= 1 || y! >= 1) return undefined;
+  const round = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 10_000) / 10_000;
+  return { container: { x: round(x!), y: round(y!), width: round(width!), height: round(height!) } };
+}
 /** Cap on retained telemetry samples, so a long capture cannot grow without bound. */
 const maximumTelemetrySamples = 20_000;
 const maximumRecordingBytes = 256 * 1024 * 1024;
@@ -1015,7 +1033,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
     try {
       const measured = await this.executeScript(
         "element_viewport_rect",
-        "const e=arguments[0],p=arguments[1],r=e.getBoundingClientRect();return {x:(p?.x??(r.left+r.width/2))/window.innerWidth,y:(p?.y??(r.top+r.height/2))/window.innerHeight,w:r.width/window.innerWidth,h:r.height/window.innerHeight,cursor:getComputedStyle(e).cursor};",
+        containerScript,
         [{ [elementKey]: element }, point ?? null],
       );
       if (!isObject(measured)) return undefined;
@@ -1032,6 +1050,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
         shape: pointerShapeFor(measured.cursor),
         width: Math.min(1, Math.max(0, typeof measured.w === "number" ? measured.w : 0)),
         height: Math.min(1, Math.max(0, typeof measured.h === "number" ? measured.h : 0)),
+        ...(containerFrom(measured.c) ?? {}),
       };
     } catch {
       // A missing rect costs a zoom, never the recording.

@@ -1369,7 +1369,7 @@ export class Recorder {
           let verdict:QualityVerdict;
           try {
             const observation=await readFile(this.path(job.id,'observation.json'),'utf8').then(text=>JSON.parse(text) as CaptureObservation).catch(()=>undefined);
-            verdict=await (this.options.assessQuality ?? assessDemo)(reviewPath,observation);
+            verdict=await (this.options.assessQuality ?? assessDemo)(reviewPath,observation,config);
           } finally { await rm(reviewPath,{force:true}); }
           if(!verdict.passed && !presentation.acceptReview) {
             job.qualityReview={...verdict,at:Date.now()};job.status='captured';job.errorCode='quality_review';delete job.pendingArtifact;

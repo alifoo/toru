@@ -330,6 +330,11 @@ export type CapturePointer = {
    */
   width: number;
   height: number;
+  /**
+   * The panel around what was clicked (the card, form or list holding it), top-left box as fractions of the
+   * viewport. Clicks inside one panel are one shot even when they are further apart than the shot radius.
+   */
+  container?: { x: number; y: number; width: number; height: number };
 };
 
 /** Browser intent recorded beside the pixels, without typed values or page content. */
