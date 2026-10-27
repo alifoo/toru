@@ -1,5 +1,5 @@
 {
-  "name": "toru", "version": "0.4.0", "description": "Recording infrastructure for your agent: record polished product demos yourself, signed in as the user.",
+  "name": "toru", "version": "0.5.0", "description": "Recording infrastructure for your agent: record polished product demos yourself, signed in as the user.",
   "author": { "name": "Toru", "url": "https://toru.tools" }, "homepage": "https://toru.tools", "repository": "https://github.com/alifoo/toru-skills", "license": "MIT",
   "keywords": ["toru", "demo-video", "screen-recording", "mcp", "skills"], "skills": "../../skills/", "mcpServers": "../../skills/toru/.mcp.json",
   "interface": { "displayName": "Toru", "shortDescription": "Record polished product demo videos.", "longDescription": "Your agent writes a step-by-step plan from your product's code and Toru records it in your own Chrome or an app on your Mac, then renders a polished MP4 with cursor motion, zooms and your brand. The plugin bundles the Toru skill and the hosted MCP server configuration.", "developerName": "Toru", "category": "Productivity", "capabilities": ["Interactive", "Write"], "websiteURL": "https://toru.tools", "defaultPrompt": ["Record a demo video of my web app.", "Check a Toru recording and get the MP4.", "Record a demo of my Mac app."], "brandColor": "#405F6D" }
