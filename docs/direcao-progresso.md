@@ -9,9 +9,10 @@ Plano: `docs/plano-direcao-humana-2026-10-27.md` (aprovado em 27/10/2026). Um PR
   - [x] Nada é cortado nem acelerado de 1,5 s antes a 0,5 s depois de cada clique (`clickReserveRanges`, `pointerActivity`)
   - [x] O driver segura 700 ms o clique que abre um enquadramento novo (`opensNewShot`, `newShotHoldMs`)
   - [x] Testes: render-contract 98, browser 137, workspace inteiro verde
-- [ ] **0 · Estudo dos gestos humanos** · branch `feat/direcao-fase-0-estudo`
-  - [ ] Referências (20 a 30 demos) e medidas do movimento
-  - [ ] Catálogo `docs/gestos-humanos.md` com regras de direção
+- [x] **0 · Estudo dos gestos humanos** · branch `feat/direcao-fase-0-estudo`
+  - [x] Pesquisa: cinemática do apontar (minimum jerk, submovimentos, reentrada) e guias de screencast/zoom
+  - [x] Catálogo `docs/gestos-humanos.md`: parâmetros do movimento, 7 gestos, regras de direção, exemplo da Nock
+  - [ ] Medir em demos de referência do fundador (espera a lista dele; não bloqueia a Fase 1b)
 - [ ] **1b · Menos zoom e checagem de entrega** (Fase 1, itens 3 e 4)
   - [ ] Sem zoom em navegação e trocas de tela
   - [ ] Grupo pelo contêiner do DOM
@@ -27,4 +28,5 @@ Plano: `docs/plano-direcao-humana-2026-10-27.md` (aprovado em 27/10/2026). Um PR
 
 ## Registro
 
-- 27/10: etapa 1a pronta (este arquivo criado).
+- 27/10: etapa 1a pronta (este arquivo criado), PR #18.
+- 27/10: Fase 0 pronta (catálogo).
