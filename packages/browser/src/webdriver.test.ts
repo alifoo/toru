@@ -15,7 +15,9 @@ import {
   type WebDriverTransport,
   opensNewShot,
   containerFrom,
+  circlePoint,
   humanTravelPoint,
+  underlinePoint,
   minimumJerk,
   motionRandom,
   planHumanTravel,
@@ -42,6 +44,7 @@ class ProtocolHarness implements WebDriverTransport {
   windowRect = { width: 1280, height: 720, x: 0, y: 0 };
   browserChrome = { width: 0, height: 0 };
   targetDescription = "Search";
+  rows: unknown = [{ x: 100, y: 100, width: 800, height: 40 }, { x: 100, y: 140, width: 800, height: 40 }, { x: 100, y: 180, width: 800, height: 40 }];
   /** Ref lookups miss when this is null, which is how a stale ref is simulated. */
   refElement: string | null = "element-1";
   pageOutline = '[ref_1] button "Encontrar novos leads"';
@@ -82,6 +85,8 @@ class ProtocolHarness implements WebDriverTransport {
     if (path.endsWith("/execute/sync")) {
       const script = (body as { script: string }).script;
       if (script.includes("createTreeWalker(root,NodeFilter.SHOW_TEXT)")) return this.identityRects;
+      if (script.includes("tbody tr")) return this.rows;
+      if (script.includes("y:r.top,width:r.width")) return { x: 400, y: 300, width: 200, height: 40, w: 1280, h: 720 };
       if (script.includes('r.left-32')) return { x: 0.2, y: 0.2, width: 0.5, height: 0.3 };
       if (script.includes("matches(':disabled')")) return this.disabled;
       if (script.includes("const t = window.__captureTelemetry")) return this.telemetryDrain;
@@ -1744,5 +1749,51 @@ describe("human travel", () => {
   it("keeps short hops straight and exact", () => {
     const travel = planHumanTravel({ x: 100, y: 100 }, { x: 150, y: 120 }, motionRandom(7));
     expect(travel).toEqual({ bend: 0, correctionMs: 0, through: { x: 150, y: 120 } });
+  });
+});
+
+describe("gestures", () => {
+  const box = { x: 400, y: 300, width: 200, height: 40 };
+
+  it("loops once around the element from its upper left, and strokes under it left to right", () => {
+    const start = circlePoint(box, 12, 0);
+    expect(circlePoint(box, 12, 1)).toEqual(start);
+    expect(start.x).toBeLessThan(500);
+    expect(start.y).toBeLessThan(320);
+    // Halfway round it is on the far side, outside the box.
+    const half = circlePoint(box, 12, 0.5);
+    expect(half.x).toBeGreaterThan(500);
+    expect(half.y).toBeGreaterThan(320);
+    expect(underlinePoint(box, 0)).toEqual({ x: 400, y: 346 });
+    expect(underlinePoint(box, 1)).toEqual({ x: 600, y: 346 });
+  });
+
+  it("records each gesture as an emphasis moment framed on the element, without pressing", async () => {
+    const protocol = new ProtocolHarness();
+    const context = await new WebDriverBrowserDriver(protocol, {
+      resolveHostname: async () => ["93.184.216.34"],
+    }).createContext(contextOptions()) as unknown as BrowserContextDriver & {
+      gesture(kind: string, target: unknown, options?: { rows?: number }): Promise<void>;
+      semanticTimeline(): Array<{ type: string; element: string; atMs: number; endMs?: number; focus?: unknown }>;
+    };
+    try {
+      await context.goto("https://demo.example.com/dashboard");
+      await context.startRecording();
+      const before = protocol.calls.length;
+      await context.gesture("circle", { type: "coordinate", x: 500, y: 320 });
+      await context.gesture("sweep", { type: "coordinate", x: 500, y: 150 }, { rows: 3 });
+      const bodies = protocol.calls.slice(before).map(call => JSON.stringify(call.body) ?? "");
+      expect(bodies.some(body => body.includes("pointerDown"))).toBe(false);
+      const emphasis = context.semanticTimeline().filter(moment => moment.type === "emphasis");
+      expect(emphasis.map(moment => moment.element.split(" ")[0])).toEqual(["circle", "sweep"]);
+      expect(emphasis[0]!.focus).toEqual({ x: 400 / 1280, y: 300 / 720, width: 200 / 1280, height: 40 / 720 });
+      // The sweep frames the rows it ran down, not the element named.
+      expect(emphasis[1]!.focus).toEqual({ x: 100 / 1280, y: 100 / 720, width: 800 / 1280, height: 120 / 720 });
+      expect(emphasis.every(moment => moment.endMs! > moment.atMs)).toBe(true);
+      protocol.rows = [];
+      await expect(context.gesture("sweep", { type: "coordinate", x: 500, y: 150 })).rejects.toMatchObject({ code: "no_rows_to_sweep" });
+    } finally {
+      await context.dispose();
+    }
   });
 });

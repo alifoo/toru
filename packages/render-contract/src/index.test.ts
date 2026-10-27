@@ -1285,3 +1285,29 @@ describe("camera review", () => {
     expect(reviewCamera({ zoomRegions: [{ startMs: 4_800, endMs: 9_000 }] }, { ...directed, directed: false })).toEqual([]);
   });
 });
+
+describe("gesture camera", () => {
+  const gesture = (atMs: number, focus: { x: number; y: number; width: number; height: number }) =>
+    ({ type: "emphasis" as const, atMs, endMs: atMs + 1_500, ref: null, element: "circle Total", focus });
+
+  it("frames a gesture subtly from its start to a second after it ends", () => {
+    const regions = proposeZoomRegions([], 20_000, [], [gesture(5_000, { x: 0.4, y: 0.4, width: 0.2, height: 0.1 })], true);
+    expect(regions).toHaveLength(1);
+    expect(regions[0]).toMatchObject({ intent: "emphasis", startMs: 5_000, endMs: 7_500 });
+    expect(regions[0]!.customScale).toBeLessThanOrEqual(1.6);
+    expect(regions[0]!.focus).toEqual({ cx: 0.5, cy: 0.45 });
+  });
+
+  it("leaves a gesture over a quarter of the screen in the wide shot", () => {
+    expect(proposeZoomRegions([], 20_000, [], [gesture(5_000, { x: 0, y: 0, width: 0.6, height: 0.5 })], true)).toHaveLength(0);
+  });
+
+  it("keeps a gesture whatever the pace, and the review agrees", () => {
+    const pointers = Array.from({ length: 4 }, (_unused, index) =>
+      click(2_000 + index * 8_000, { x: index % 2 ? 0.8 : 0.2, y: index % 2 ? 0.8 : 0.2 }));
+    const timeline = [gesture(36_000, { x: 0.4, y: 0.4, width: 0.1, height: 0.1 })];
+    const regions = proposeZoomRegions(pointers, 50_000, [], timeline, true);
+    expect(regions.some(region => region.intent === "emphasis")).toBe(true);
+    expect(reviewCamera({ zoomRegions: regions }, { pointerTrail: pointers, directed: true })).toEqual([]);
+  });
+});

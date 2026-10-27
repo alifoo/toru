@@ -25,6 +25,12 @@ export type PointerKind =
 
 export type ScrollDirection = "up" | "down" | "left" | "right";
 
+/**
+ * Pointer gestures that show without pressing (docs/gestos-humanos.md): rest on an element, circle or underline it,
+ * or sweep down the rows of a list. Each is recorded as an `emphasis` moment the camera frames.
+ */
+export type GestureKind = "point" | "circle" | "underline" | "sweep";
+
 export interface BrowserRefDriver {
   /** Geometry only: visible scroll containers and remaining space, never hidden cell values. */
   readScrollState?(): Promise<string>;
@@ -36,6 +42,8 @@ export interface BrowserRefDriver {
   pageText(): Promise<string>;
   currentUrl(): Promise<string>;
   pointer(kind: PointerKind, target: BrowserTarget): Promise<void>;
+  /** Optional: a driver without it (an older Toru for Chrome) is asked for a plain `move` instead. */
+  gesture?(kind: GestureKind, target: BrowserTarget, options?: { rows?: number }): Promise<void>;
   /** Types into the element a ref names, so the recording shows text being entered. */
   formInput(ref: string, value: string | number | boolean): Promise<void>;
   scrollToRef(ref: string): Promise<void>;

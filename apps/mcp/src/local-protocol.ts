@@ -1,4 +1,4 @@
-export const LOCAL_METHODS = ['goto','currentUrl','readPage','pageText','screenshot','pointer','formInput','typeText','pressKey','scrollBy','redactSensitiveText','startRecording','stopRecording','markDemoMoment','dispose','listSources','selectSource'] as const;
+export const LOCAL_METHODS = ['goto','currentUrl','readPage','pageText','screenshot','pointer','gesture','formInput','typeText','pressKey','scrollBy','redactSensitiveText','startRecording','stopRecording','markDemoMoment','dispose','listSources','selectSource'] as const;
 export type LocalMethod=typeof LOCAL_METHODS[number];
 export type LocalCommand={id:string;method:LocalMethod;args:unknown[]};
 export const MAX_LOCAL_JSON=12*1024*1024;
@@ -25,6 +25,11 @@ export function assertLocalCommand(command:LocalCommand):void {
   if(command.method==='typeText'||command.method==='formInput'){
     const value=command.args[command.method==='formInput'?1:0];
     if(typeof value==='string'&&/[\uE000-\uE05D]/u.test(value))throw new Error('local_method_forbidden');
+  }
+  if(command.method==='gesture'){
+    const [kind,,options]=command.args;
+    if(!['point','circle','underline','sweep'].includes(String(kind)))throw new Error('local_method_forbidden');
+    if(options!==undefined&&(typeof options!=='object'||options===null||Object.keys(options).some(key=>key!=='rows')))throw new Error('local_method_forbidden');
   }
   if(command.method==='pressKey'){
     const key=command.args[0];

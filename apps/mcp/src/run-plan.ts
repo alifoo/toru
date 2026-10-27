@@ -8,10 +8,11 @@ const text = (min: number, max: number) => z.string().trim().min(min).max(max);
 export const planStepSchema = z.object({
   /** Where the step happens, as the user sees it: a route, page title or dialog name. */
   screen: text(2, 200),
-  action: z.enum(['click', 'type', 'select', 'press', 'scroll', 'wait', 'navigate']),
+  /** point, trace, sweep and read are gestures the driving agent makes (browser_point and the rest); they press nothing. */
+  action: z.enum(['click', 'type', 'select', 'press', 'scroll', 'wait', 'navigate', 'point', 'trace', 'sweep', 'read']),
   /** The exact visible label of the control, from the source or the UI: button "Create invoice", field "Customer". */
   target: text(1, 200),
-  /** What to type, the option to pick, the key to press, or the path to open. */
+  /** What to type, the option to pick, the key to press, the path to open, or a trace's shape (circle, underline). */
   value: z.string().max(2000).optional(),
   /** What visibly changes when the step worked. */
   expect: text(3, 300),
@@ -48,11 +49,13 @@ export function label(target: string): string {
 /**
  * The steps the navigator follows. Typing into a field focuses it, and the navigator only clicks controls, never
  * text fields: a "click the field" step right before typing into the same field made it look for a control that is
- * not there and give up (no_progress on a Wikipedia search, 2026-10-24). Such a click is dropped.
+ * not there and give up (no_progress on a Wikipedia search, 2026-10-24). Such a click is dropped. Gestures are dropped
+ * too: they show what is on screen and change nothing, and the navigator has no tool for them.
  */
+const gestures: ReadonlySet<string> = new Set(['point', 'trace', 'sweep', 'read']);
 export function scriptSteps(steps: RunPlan['steps']): RunPlan['steps'] {
-  return steps.filter((step, index) => {
-    const next = steps[index + 1];
+  return steps.filter(step => !gestures.has(step.action)).filter((step, index, kept) => {
+    const next = kept[index + 1];
     return !(step.action === 'click' && next && (next.action === 'type' || next.action === 'select') && label(next.target) === label(step.target));
   });
 }

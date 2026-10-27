@@ -7,7 +7,7 @@ import { viewportSchema } from "./viewport.js";
 export const TOOL_NAMES = [
   "preparation_save", "preparation_read", "queue_enqueue", "queue_status", "queue_cancel", "account_usage", "navigation_start", "navigation_status", "navigation_guide", "navigation_stop", "browser_select",
   "session_connect", "connection_status", "session_import_status", "session_open", "session_close", "browser_observe", "browser_navigate", "browser_click",
-  "browser_move", "browser_type", "browser_scroll", "browser_key", "browser_wait", "mark_demo_moment", "recording_start", "recording_stop",
+  "browser_move", "browser_point", "browser_trace", "browser_sweep", "browser_read", "browser_type", "browser_scroll", "browser_key", "browser_wait", "mark_demo_moment", "recording_start", "recording_stop",
   "recording_status", "recording_cancel", "recording_render", "recording_links", "recording_run", "recording_run_status", "recording_run_finish", "recording_run_cancel", "demo_accounts_list",
 ] as const;
 
@@ -36,6 +36,10 @@ export const TOOL_SCHEMAS: Record<ToolName, Record<string, z.ZodType>> = {
   browser_navigate: { id, url: z.string().url() },
   browser_click: { id, ref: z.string().min(1).max(200).optional(), x: z.number().finite().optional(), y: z.number().finite().optional() },
   browser_move: { id, ref: z.string().min(1).max(200).optional(), x: z.number().finite().optional(), y: z.number().finite().optional() },
+  browser_point: { id, ref: z.string().min(1).max(200) },
+  browser_trace: { id, ref: z.string().min(1).max(200), shape: z.enum(["circle", "underline"]) },
+  browser_sweep: { id, ref: z.string().min(1).max(200), rows: z.number().int().min(1).max(5).optional() },
+  browser_read: { id, amount: z.number().int().min(300).max(3000).optional(), x: z.number().finite().optional(), y: z.number().finite().optional() },
   browser_type: { id, ref: z.string().min(1).max(200).optional(), text: z.string().max(10_000) },
   browser_scroll: { id, direction: z.enum(["up", "down", "left", "right"]), amount: z.number().finite().optional(), x: z.number().finite().optional(), y: z.number().finite().optional() },
   browser_key: { id, key: z.string().min(1).max(50) },

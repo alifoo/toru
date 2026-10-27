@@ -988,6 +988,18 @@ export function proposeZoomRegions(
         customScale: Math.max(1, Math.min(1.8, 0.9 / Math.max(width, height, 0.01))),
         focus: { cx: x + width / 2, cy: y + height / 2 }, focusMode: "manual", source: "auto", intent: "type", element: moment.element });
     }
+    // A gesture the agent made on purpose (pointing at, circling, underlining or sweeping something) is framed on its
+    // element from the travel there to a second after it ends. Subtle, at most 1.6×; a quarter of the screen or more is
+    // already readable in the wide shot (docs/gestos-humanos.md).
+    for (const moment of semanticTimeline) {
+      if (moment.type !== "emphasis" || moment.endMs === undefined || !moment.focus) continue;
+      const { x, y, width, height } = moment.focus;
+      if (width * height >= 0.25) continue;
+      regions.push({ id: `emphasis-${regions.length}`, startMs: moment.atMs,
+        endMs: Math.min(durationMs, moment.endMs + 1_000), depth: depthForTarget(width, height),
+        customScale: Math.max(1, Math.min(directedCap, 0.9 / Math.max(width, height, 0.01))),
+        focus: { cx: x + width / 2, cy: y + height / 2 }, focusMode: "manual", source: "auto", intent: "emphasis", element: moment.element });
+    }
   }
   for (const moment of semanticTimeline) {
     if (moment.type !== "result" || !moment.focus || moment.atMs >= durationMs) continue;
@@ -1042,14 +1054,15 @@ export function movesFlowOn(pointer: CapturePointer, timeline: readonly CaptureS
  * The most zooms a minute of demo carries, and the open shot kept between two of them.
  *
  * More than about four a minute, or a camera that comes out for less than two seconds before going back in, reads as
- * pumping (docs/gestos-humanos.md, rule 5). Typing and the result are never dropped: they are what the zoom is for.
+ * pumping (docs/gestos-humanos.md, rule 5). Typing, gestures and the result are never dropped: they are what the zoom is for.
  */
 const zoomsPerMinute = 4;
 const openBetweenZoomsMs = 2_000;
 
 function paceZooms(regions: readonly ProposedZoomRegion[]): ProposedZoomRegion[] {
   const kept: ProposedZoomRegion[] = [];
-  const essential = (region: ProposedZoomRegion) => region.intent === "result" || region.intent === "type";
+  const essential = (region: ProposedZoomRegion) =>
+    region.intent === "result" || region.intent === "type" || region.intent === "emphasis";
   for (const candidate of [...regions].sort((a, b) => a.startMs - b.startMs)) {
     const region = { ...candidate };
     const previous = kept[kept.length - 1];
@@ -1624,7 +1637,7 @@ export function outputTimeMs(sourceMs: number, edit: EditTimeline): number {
  *
  * `camera_late`: the camera is still easing in or out when a click lands, so the press is a blur. `zoom_pumping`: it
  * comes out for less than two seconds before going back in, or zooms more than four times a minute (the result
- * and typing zooms aside). A field clicked to type into is left out: its typing zoom follows the click on purpose.
+ * typing and gesture zooms aside). A field clicked to type into is left out: its typing zoom follows the click on purpose.
  */
 export function reviewCamera(
   config: ExporterConfig,
@@ -1644,8 +1657,9 @@ export function reviewCamera(
   const late = (observation.pointerTrail ?? []).some(pointer => pointer.shape !== "text"
     && moves.some(move => move.startMs < pointer.atMs + 100 && move.endMs > pointer.atMs - 250));
   if (late) reasons.push("camera_late");
-  // Typing and the result are kept whatever the pace, as `paceZooms` keeps them.
-  const essential = (region: { intent?: unknown }) => region.intent === "result" || region.intent === "type";
+  // Typing, gestures and the result are kept whatever the pace, as `paceZooms` keeps them.
+  const essential = (region: { intent?: unknown }) =>
+    region.intent === "result" || region.intent === "type" || region.intent === "emphasis";
   const zooms = regions.filter(region => !essential(region));
   const outAndBack = regions.some((region, index) => {
     const previous = regions[index - 1];
