@@ -13,6 +13,7 @@ import { privateFieldsScript, privatePageScript } from '../../mcp/src/private-pa
 import { BUILD, captureFrameSize, captureScaleFor, chooseViewport, DEBUGGER_ADDRESS, DEVELOPMENT, OBSERVATION_WIDTH, SERVER, VERSION, type BrainState, type Credentials, type Viewport } from './config.js';
 import { installDebuggerEndpoints, lastCaptureStats, useDebuggerChannel } from './debugger-socket.js';
 import { WebCodecsStreamingEncoder } from './encoder.js';
+import { scalePng } from './scale-image.js';
 import { encodeValue } from './values.js';
 import { allowedTarget, onProductSite } from './targets.js';
 
@@ -177,7 +178,7 @@ async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?:
   // The tab renders the viewport at `scale` device pixels per CSS pixel (2560 device pixels wide at most) and the
   // screencast asks for that many: the same layout and coordinates, a sharper recording. The navigator's screenshots
   // stay 1280 wide, the viewport scaled down into them.
-  const cdp = new CdpWebDriverTransport(channel, { debuggerAddress: DEBUGGER_ADDRESS, deviceScaleFactor: scale, observationWidth: OBSERVATION_WIDTH });
+  const cdp = new CdpWebDriverTransport(channel, { debuggerAddress: DEBUGGER_ADDRESS, deviceScaleFactor: scale, observationWidth: OBSERVATION_WIDTH, downscale: scalePng });
   const transport = {
     request: async (method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown) => {
       const value = await cdp.request(method, path, body);

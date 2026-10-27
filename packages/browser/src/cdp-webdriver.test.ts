@@ -156,6 +156,22 @@ describe("CdpWebDriverTransport device scale", () => {
     expect(observationScale(1920, 1280)).toBeCloseTo(2 / 3);
   });
 
+  it("scales the observation itself when it can, so Chrome never re-renders the recorded tab smaller", async () => {
+    const { channel, sent } = fakeChannel(300);
+    const scaled: Array<[number, number]> = [];
+    const transport = new CdpWebDriverTransport(channel, {
+      deviceScaleFactor: 2560 / 1440,
+      observationWidth: 1280,
+      downscale: async (_png, width, height) => { scaled.push([width, height]); return "scaled"; },
+    });
+    await transport.request("POST", "/session", {});
+    await transport.request("POST", "/session/cdp/window/rect", { width: 1440, height: 900 });
+    expect(await transport.request("GET", "/session/cdp/screenshot")).toBe("scaled");
+    // The capture is the tab as it renders (no clip, no scale); the 1280x800 observation comes from downscale.
+    expect(sent.filter((call) => call.method === "Page.captureScreenshot").map((call) => call.params)).toEqual([{ format: "png" }]);
+    expect(scaled).toEqual([[1280, 800]]);
+  });
+
   it("keeps device scale 1 and an unclipped screenshot by default", async () => {
     const { channel, sent } = fakeChannel();
     const transport = new CdpWebDriverTransport(channel);
