@@ -34,7 +34,7 @@ Toru records in two places only: the user's own Chrome (Toru for Chrome) and the
 ## Step-by-step browser actions
 - `session_open {url, localConnectionId, requestId}` → recording session id in the user's Chrome.
 - `browser_observe`, `browser_navigate`, `browser_click`, `browser_type`, `browser_key`, `browser_scroll`, `browser_move`, `browser_wait`, `browser_select`.
-- Gestures (shown, never pressed; the camera frames them): `browser_point {id, ref}`, `browser_trace {id, ref, shape: circle|underline}`, `browser_sweep {id, ref, rows?: 1–5}`, `browser_read {id, amount?: 300–3000, x?, y?}`. On a Chrome extension without gestures yet, the first three just point the cursor. When and how: `direction.md`.
+- Gestures (shown, never pressed; the camera frames them): `browser_point {id, ref | x,y}`, `browser_trace {id, ref | x,y, shape: circle|underline}`, `browser_sweep {id, ref | x,y, rows?: 1–5}`, `browser_read {id, amount?: 300–3000, x?, y?}`. On a Chrome extension without gestures yet, the first three just point the cursor. When and how: `direction.md`.
 - Toru navigation: `navigation_start {id, goal}`, `navigation_status`, `navigation_guide`, `navigation_stop`.
 - `mark_demo_moment {id, kind: setup|action|result, note, observationId?}`.
 

@@ -23,6 +23,8 @@ Gestures show without pressing. Each one is in the video, and the camera frames 
 | `browser_read {amount?}` | Smooth scrolling in steps, pausing to read | A long page that should be seen, not jumped |
 | `browser_move {x, y}` | The cursor leaves the content | After the final emphasis, so nothing covers the result |
 
+Data is rarely clickable, so the outline often has no ref for a number or a cell: pass `x, y` (CSS pixels, as for `browser_click`) instead of `ref`. A sweep named by a link inside a table row sweeps that table from the row down, and a gesture on something scrolled out of view scrolls back to it first.
+
 In a plan, write these steps as the actions `point`, `trace` (the `value` is `circle` or `underline`), `sweep` and `read`.
 
 ## Rules
