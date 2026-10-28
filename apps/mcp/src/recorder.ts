@@ -65,6 +65,8 @@ type Job = {
    */
   anySite?: boolean;
   desktopDeviceId?:string; rawFile?: 'raw.webm'|'raw.mp4'; privacyMode?:'user-approved-unredacted';
+  /** Toru for Chrome: the user approved showing e-mail addresses, so neither the page nor the render blurs them. */
+  showEmails?: true;
   desktopRecoveryPending?:boolean;
   /** Toru for Mac: what the recording did with the shared window's size (see DesktopWindow). */
   desktopWindow?: DesktopWindow;
@@ -596,7 +598,7 @@ export class Recorder {
         case 'recording_start':
           if (active.job.status === 'recording') return reply(this.status(active.job));
           if (active.job.status !== 'ready') throw new Error('open_new_session_to_record_again');
-          if(driver.capturePrivacy!=='user-approved-desktop')await driver.redactSensitiveText();
+          if(driver.capturePrivacy!=='user-approved-desktop'&&!active.job.showEmails)await driver.redactSensitiveText();
           this.assertActive(active);
           await driver.startRecording(); active.startedAt = driver.recordingStartedAtMs ?? Date.now();
           if (driver.desktopWindow) active.job.desktopWindow = driver.desktopWindow;
@@ -984,7 +986,7 @@ export class Recorder {
     if(localId&&!this.options.createLocalContext)throw new Error('local_browser_disabled');
     const requestId=args.requestId===undefined?undefined:uuid.parse(args.requestId);
     const viewport=viewportOf(args.viewport);
-    const inputHash=createHash('sha256').update(JSON.stringify({url:args.url,allowedOrigins:args.allowedOrigins ?? null,importId:args.importId ?? null,...(localId?{localConnectionId:localId}:{}),...(args.viewport!==undefined?{viewport:args.viewport}:{}),connect:deferNavigation})).digest('hex');
+    const inputHash=createHash('sha256').update(JSON.stringify({url:args.url,allowedOrigins:args.allowedOrigins ?? null,importId:args.importId ?? null,...(localId?{localConnectionId:localId}:{}),...(args.viewport!==undefined?{viewport:args.viewport}:{}),...(args.showEmails===true?{showEmails:true}:{}),connect:deferNavigation})).digest('hex');
     const operation=deferNavigation?'session_connect':'session_open';
     if(requestId) {
       const receipt=this.store.connection.prepare('SELECT job_id,input_hash FROM operation_requests WHERE owner=? AND operation=? AND request_id=?').get(owner,operation,requestId);
@@ -1033,6 +1035,7 @@ export class Recorder {
         };
         driver = localId ? await this.options.createLocalContext!(owner,localId,{...contextOptions,captureId:job.id}) : await this.options.createContext(contextOptions);
         if(localId && driver.capturePrivacy!=='user-approved-desktop')this.browserReservation=await this.reserve(owner,'browserMs',job.policy?.sessionMs ?? limits.session,job.id);
+        if(localId&&args.showEmails===true&&driver.capturePrivacy!=='user-approved-desktop'){job.showEmails=true;await this.save(job);}
         if(driver.capturePrivacy==='user-approved-desktop'){if(localId)job.desktopDeviceId=localId;job.rawFile='raw.mp4';job.privacyMode='user-approved-unredacted';await this.save(job);}
         (driver as Driver & {onDisconnect?:(callback:()=>void)=>void}).onDisconnect?.(()=>{
           const active=this.active;
@@ -1269,7 +1272,7 @@ export class Recorder {
             ...videoSize(observationViewport(active.driver), active.driver.captureSize),
           };
           const clicks = observation.pointerTelemetry.filter(sample => sample.kind === 'down').map(sample => sample.atMs);
-          const redactions = redactionIntervals(active.driver.identitySightings?.() ?? [], observation.durationMs, clicks,
+          const redactions = active.job.showEmails ? [] : redactionIntervals(active.driver.identitySightings?.() ?? [], observation.durationMs, clicks,
             active.driver.capturePrivacy !== 'user-approved-desktop');
           if (redactions.length) observation.redactions = redactions;
           await this.atomic(this.path(active.job.id, 'observation.json'), observation);
