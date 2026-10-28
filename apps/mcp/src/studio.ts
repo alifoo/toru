@@ -84,7 +84,7 @@ export type RunStudio = {
 const carries: Record<RunPlan['steps'][number]['action'], ReadonlyArray<CaptureSemanticAction['type']>> = {
   click: ['click', 'double_click', 'right_click', 'action'], type: ['type'], select: ['click', 'type', 'action'], press: ['key'],
   scroll: ['scroll'], navigate: ['navigate', 'click'], wait: [],
-  point: ['emphasis'], trace: ['emphasis'], sweep: ['emphasis'], read: ['scroll'],
+  point: ['emphasis'], trace: ['emphasis'], sweep: ['emphasis'], highlight: ['emphasis'], read: ['scroll'],
 };
 const words = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 

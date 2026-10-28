@@ -754,6 +754,8 @@ it('makes gestures with the driver, falls back to pointing on one without them, 
     // A number or a cell has no ref: a point on screen names it.
     await recorder.call(owner, 'browser_trace', { id, x: 640, y: 300, shape: 'underline' });
     expect(driver.gesture).toHaveBeenCalledWith('underline', { type: 'coordinate', x: 640, y: 300 }, undefined);
+    await recorder.call(owner, 'browser_highlight', { id, ref: 'ref_1', text: 'founded in 2013' });
+    expect(driver.gesture).toHaveBeenCalledWith('highlight', { type: 'ref', ref: 'ref_1' }, { text: 'founded in 2013' });
     await recorder.call(owner, 'browser_read', { id, amount: 900 });
     const scrolled = driver.scrollBy.mock.calls.map(call => call[2] as number);
     expect(scrolled.reduce((sum, step) => sum + step, 0)).toBe(900);

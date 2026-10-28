@@ -28,8 +28,10 @@ export function assertLocalCommand(command:LocalCommand):void {
   }
   if(command.method==='gesture'){
     const [kind,,options]=command.args;
-    if(!['point','circle','underline','sweep'].includes(String(kind)))throw new Error('local_method_forbidden');
-    if(options!==undefined&&(typeof options!=='object'||options===null||Object.keys(options).some(key=>key!=='rows')))throw new Error('local_method_forbidden');
+    if(!['point','circle','underline','sweep','highlight'].includes(String(kind)))throw new Error('local_method_forbidden');
+    if(options!==undefined&&(typeof options!=='object'||options===null||Object.keys(options).some(key=>key!=='rows'&&key!=='text')))throw new Error('local_method_forbidden');
+    const text=(options as {text?:unknown}|undefined)?.text;
+    if(text!==undefined&&(typeof text!=='string'||text.length>300))throw new Error('local_method_forbidden');
   }
   if(command.method==='pressKey'){
     const key=command.args[0];

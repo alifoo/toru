@@ -160,6 +160,25 @@ export function underlinePoint(box: Box, progress: number): Point {
 const committingLabel = /(?:^|\s)(?:criar|enviar|ativar|publicar|confirmar|salvar|lançar|create|send|activate|publish|confirm|save|launch|submit)\b/iu;
 
 /**
+ * The passage to highlight: `text` (case and spacing aside) inside the element, or in its nearest ancestor holding it,
+ * else the element's own text. "measure" returns its line boxes and whether it ends on a control; "select" makes the
+ * first `arguments[3]` (0–1) of it the page's selection, so the highlight grows with the cursor.
+ */
+const highlightScript = `const e=arguments[0],mode=arguments[2],part=Math.min(1,Math.max(0,Number(arguments[3]??1)));
+const norm=t=>t.replace(/\\s+/g,' ').trim().toLowerCase();
+const wanted=norm(arguments[1]||'')||norm(e.textContent||'');
+const rangeIn=root=>{if(!wanted)return null;const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let flat='',map=[];
+for(let n=w.nextNode();n;n=w.nextNode()){const t=n.data;for(let i=0;i<t.length;i++){const c=/\\s/.test(t[i])?' ':t[i].toLowerCase();if(c===' '&&(flat===''||flat.endsWith(' ')))continue;flat+=c;map.push([n,i]);}}
+const at=flat.indexOf(wanted);if(at<0)return null;const length=Math.max(1,Math.ceil(wanted.length*part));
+const a=map[at],b=map[at+length-1];const r=document.createRange();r.setStart(a[0],a[1]);r.setEnd(b[0],b[1]+1);return r;};
+let range=null;for(let n=e,k=0;n&&k<8&&!range;n=n.parentElement,k++)range=rangeIn(n);
+if(!range)return {missing:true};
+if(mode==='select'){const s=getSelection();s.removeAllRanges();s.addRange(range);return {selected:s.toString().length};}
+const rects=[...range.getClientRects()].filter(r=>r.width>1&&r.height>1).map(r=>({x:r.left,y:r.top,width:r.width,height:r.height}));
+const control='a,button,label,input,textarea,select,summary,[draggable=true],[role=button],[role=link]';
+return {rects,endsOnControl:!!range.endContainer.parentElement?.closest(control),length:range.toString().length};`;
+
+/**
  * The rows to sweep. Agents name a list by something clickable in it (a link in the first row), so an element inside a
  * table or list sweeps that table or list, from its own row down; an element holding rows sweeps them from the top.
  */
@@ -856,7 +875,8 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
    * those waits add up to twice the travel, which renders as a cursor dragging toward its target; reading the clock
    * makes a slow page cost smoothness (fewer, longer steps) instead of time.
    */
-  private async glidePointer(durationMs: number, place: (progress: number) => Point, arrivalShape?: CapturePointerShape): Promise<void> {
+  private async glidePointer(durationMs: number, place: (progress: number) => Point, arrivalShape?: CapturePointerShape,
+    onStep?: (progress: number) => Promise<unknown>): Promise<void> {
     const startedAt = performance.now();
     const maximumSteps = Math.ceil(durationMs / pointerStepMs) * 2;
     let at = this.pointerAt ?? place(0);
@@ -867,6 +887,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       if (next.x !== at.x || next.y !== at.y || progress === 1) {
         await this.pointerMoveRequest(next.x, next.y);
         this.recordDriverSample(next.x, next.y, "move", progress === 1 && arrivalShape ? arrivalShape : this.driverShape);
+        await onStep?.(progress);
       }
       at = next;
       this.pointerAt = at;
@@ -2100,7 +2121,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
    * sweep down the first rows of a list or table. Recorded as an `emphasis` moment with the element's box, so the
    * camera frames it. Off camera there is nothing to show and nothing happens.
    */
-  async gesture(kind: GestureKind, target: BrowserTarget, options: { rows?: number } = {}): Promise<void> {
+  async gesture(kind: GestureKind, target: BrowserTarget, options: { rows?: number; text?: string } = {}): Promise<void> {
     const element = await this.elementForTarget(target);
     await this.assertElementAllowed(element);
     if (this.recordingStartedAtMs === null) return;
@@ -2126,6 +2147,20 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
         .filter(row => [row.x, row.y, row.width, row.height].every(Number.isFinite));
       if (!rows.length) throw new WebDriverProtocolError("no_rows_to_sweep");
     }
+    // The passage's line boxes, measured first for the same reason.
+    let lines: Box[] = [];
+    let characters = 0;
+    let endsOnControl = false;
+    if (kind === "highlight") {
+      const raw = await this.executeScript("gesture_text", highlightScript, [{ [elementKey]: element }, (options.text ?? "").slice(0, 300), "measure"]);
+      if (!isObject(raw) || raw.missing === true) throw new WebDriverProtocolError("text_to_highlight_not_found");
+      lines = (Array.isArray(raw.rects) ? raw.rects : []).filter(isObject)
+        .map(line => clip({ x: Number(line.x), y: Number(line.y), width: Number(line.width), height: Number(line.height) }))
+        .filter(line => [line.x, line.y, line.width, line.height].every(Number.isFinite));
+      if (!lines.length) throw new WebDriverProtocolError("text_to_highlight_not_found");
+      characters = numeric(raw.length, 20);
+      endsOnControl = raw.endsOnControl === true;
+    }
     const startedAt = Date.now();
     const inside = (point: Point): Point => ({
       x: Math.min(viewWidth - 1, Math.max(0, point.x)), y: Math.min(viewHeight - 1, Math.max(0, point.y)) });
@@ -2139,6 +2174,36 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       } else if (kind === "underline") {
         await this.movePointerTo(element, inside(underlinePoint(box, 0)));
         await this.glidePointer(600 + this.motion() * 300, progress => inside(underlinePoint(box, progress)));
+      } else if (kind === "highlight") {
+        // The cursor runs from the passage's first character to its last and the selection grows under it, as when a
+        // presenter drags across text to stress it. Nothing is pressed: a press and release over a clickable card or row
+        // would click it, and a press in a link would start dragging the link.
+        const first = lines[0]!, last = lines[lines.length - 1]!;
+        const from = inside({ x: Math.round(first.x + 1), y: Math.round(first.y + first.height / 2) });
+        const to = inside({ x: Math.round(last.x + last.width - 1), y: Math.round(last.y + last.height / 2) });
+        await this.movePointerTo(element, from);
+        const passage = (options.text ?? "").slice(0, 300);
+        // A text cursor while selecting, as the page would show it under a hand that is dragging.
+        const shape = this.driverShape;
+        this.driverShape = "text";
+        await this.glidePointer(Math.min(1_400, 450 + characters * 12), progress => {
+          const eased = minimumJerk(progress);
+          return { x: Math.round(from.x + (to.x - from.x) * eased), y: Math.round(from.y + (to.y - from.y) * eased) };
+        }, undefined, progress => this.executeScript("gesture_select", highlightScript, [{ [elementKey]: element }, passage, "select", minimumJerk(progress)])
+          .catch(() => undefined));
+        this.driverShape = shape;
+        if (endsOnControl) {
+          // Resting on a link opens its hover card (Wikipedia's page preview) over the passage: step just below the line.
+          const below = inside({ x: to.x, y: Math.round(last.y + last.height + 14) });
+          await this.glidePointer(220, progress => {
+            const eased = minimumJerk(progress);
+            return { x: Math.round(to.x + (below.x - to.x) * eased), y: Math.round(to.y + (below.y - to.y) * eased) };
+          });
+        }
+        await this.restPointer(500 + this.motion() * 300);
+        const top = Math.min(...lines.map(line => line.y)), bottom = Math.max(...lines.map(line => line.y + line.height));
+        const left = Math.min(...lines.map(line => line.x)), right = Math.max(...lines.map(line => line.x + line.width));
+        box = { x: left, y: top, width: right - left, height: bottom - top };
       } else {
         // Down the left third of each row, where its name usually is, stopping on each one.
         const along = (row: Box): Point => inside({ x: Math.round(row.x + Math.min(row.width / 3, 240)), y: Math.round(row.y + row.height / 2) });

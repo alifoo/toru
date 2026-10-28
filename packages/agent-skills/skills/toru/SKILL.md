@@ -50,7 +50,7 @@ Connecting Toru authorizes **Toru**, not the user's product. Toru records where 
 }
 ```
 
-- `action`: `click | type | select | press | scroll | wait | navigate`, plus the gestures `point | trace | sweep | read` (see direction.md). `value` is what to type, the option to pick, the key to press, the path to open, or a trace's shape (`circle`, `underline`).
+- `action`: `click | type | select | press | scroll | wait | navigate`, plus the gestures `point | trace | sweep | highlight | read` (see direction.md). Add `"intent": "presentation"` when the user wants the feature demonstrated, not just the screens followed. `value` is what to type, the option to pick, the key to press, the path to open, or a trace's shape (`circle`, `underline`).
 - A field typed several times (three tasks into the same input) keeps its values in order.
 - `finalState` is what must be visible at the end; the video ends there.
 - Give the user a short plain-language summary of the plan, not a source dump.
@@ -77,7 +77,7 @@ Toru records in the user's own Chrome or on their Mac, both already signed in as
 4. `recording_run_status {runId}` answers `agent_driving` with `sessionId` and `finalState`: you drive.
    - Follow the plan one action at a time with `browser_click`, `browser_type`, `browser_key`, `browser_select`, `browser_scroll` and `browser_wait` on `sessionId`. Each reply shows the screen and the elements in view; `browser_observe` with `mode: "outline"` lists every element.
    - Every action is in the video: no exploratory clicks while recording.
-   - Direct the viewer's eye: on the screen that proves the flow, emphasize the evidence with one gesture (`browser_point`, `browser_trace` with circle or underline, `browser_sweep`, `browser_read`) before marking the result. Never use a gesture on transition screens ("Next", tabs, menus). See [`references/direction.md`](references/direction.md).
+   - Direct the viewer's eye: on the screen that proves the flow, emphasize the evidence (`browser_point`, `browser_trace` with circle or underline, `browser_sweep`, `browser_highlight`, `browser_read`) before marking the result. When the user asks to **show, demonstrate or present** a feature, plan a presentation (`intent: "presentation"`): on each content screen, point out what matters. Never use a gesture on transition screens ("Next", tabs, menus). See [`references/direction.md`](references/direction.md).
    - When `finalState` is visible: `mark_demo_moment` kind `result` with that screenshot's `observationId`, then `recording_run_finish {runId, outcome: "reached"}`. Toru holds on the result, stops, renders with the brand and checks the take. If the flow cannot be completed: `outcome: "stuck"` (no credit used).
    - Never call `recording_render` on the run's session; the run renders. If your tool list has no `recording_run_finish` (a session started before it existed), `recording_stop` on `sessionId` finishes the run as reached. After 5 minutes without a call on the session the run stops.
 5. Poll `recording_run_status {runId, waitMs: 25000}`:

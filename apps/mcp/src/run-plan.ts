@@ -8,16 +8,22 @@ const text = (min: number, max: number) => z.string().trim().min(min).max(max);
 export const planStepSchema = z.object({
   /** Where the step happens, as the user sees it: a route, page title or dialog name. */
   screen: text(2, 200),
-  /** point, trace, sweep and read are gestures the driving agent makes (browser_point and the rest); they press nothing. */
-  action: z.enum(['click', 'type', 'select', 'press', 'scroll', 'wait', 'navigate', 'point', 'trace', 'sweep', 'read']),
+  /** point, trace, sweep, highlight and read are gestures the driving agent makes (browser_point and the rest); they press nothing. */
+  action: z.enum(['click', 'type', 'select', 'press', 'scroll', 'wait', 'navigate', 'point', 'trace', 'sweep', 'highlight', 'read']),
   /** The exact visible label of the control, from the source or the UI: button "Create invoice", field "Customer". */
   target: text(1, 200),
-  /** What to type, the option to pick, the key to press, the path to open, or a trace's shape (circle, underline). */
+  /** What to type, the option to pick, the key to press, the path to open, a trace's shape (circle, underline), or the
+   * exact passage a highlight selects. */
   value: z.string().max(2000).optional(),
   /** What visibly changes when the step worked. */
   expect: text(3, 300),
 });
 export const planSchema = z.object({
+  /**
+   * walkthrough follows the screens; presentation demonstrates the feature as a person would, pointing out on each
+   * content screen what the viewer should notice (the plan's point, trace, sweep and highlight steps).
+   */
+  intent: z.enum(['walkthrough', 'presentation']).default('walkthrough'),
   /** Data or state that must exist before the flow (an invoice in Draft, a signed-in admin). */
   preconditions: z.array(text(3, 300)).max(10).default([]),
   steps: z.array(planStepSchema).min(1).max(30),
@@ -52,7 +58,15 @@ export function label(target: string): string {
  * not there and give up (no_progress on a Wikipedia search, 2026-10-24). Such a click is dropped. Gestures are dropped
  * too: they show what is on screen and change nothing, and the navigator has no tool for them.
  */
-const gestures: ReadonlySet<string> = new Set(['point', 'trace', 'sweep', 'read']);
+const gestures: ReadonlySet<string> = new Set(['point', 'trace', 'sweep', 'highlight', 'read']);
+
+/** The steps that point something out to the viewer. */
+export const attentionActions: ReadonlySet<string> = new Set(['point', 'trace', 'sweep', 'highlight']);
+
+/** A presentation that never points anything out is a walkthrough: it is sent back for its attention points. */
+export function lacksAttention(plan: RunPlan): boolean {
+  return plan.intent === 'presentation' && !plan.steps.some(step => attentionActions.has(step.action));
+}
 export function scriptSteps(steps: RunPlan['steps']): RunPlan['steps'] {
   return steps.filter(step => !gestures.has(step.action)).filter((step, index, kept) => {
     const next = kept[index + 1];

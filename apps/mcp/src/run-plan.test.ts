@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { compilePlan, planSchema, scriptSteps } from './run-plan.js';
+import { compilePlan, lacksAttention, planSchema, scriptSteps } from './run-plan.js';
 
 const plan = planSchema.parse({
   steps: [
@@ -26,4 +26,15 @@ it('accepts gestures in a plan and leaves them out of the navigator script', () 
     { screen: 'Article', action: 'read', target: 'the History section', expect: 'The section scrolls past' }] });
   expect(scriptSteps(withGestures.steps).map(step => step.action)).toEqual(['type', 'press', 'click']);
   expect(compilePlan(withGestures)).not.toContain('underline');
+});
+
+it('defaults to a walkthrough, and asks a presentation for something to point out', () => {
+  expect(plan.intent).toBe('walkthrough');
+  expect(lacksAttention(plan)).toBe(false);
+  const presentation = planSchema.parse({ ...plan, intent: 'presentation' });
+  expect(lacksAttention(presentation)).toBe(true);
+  const pointed = planSchema.parse({ ...presentation, steps: [...presentation.steps,
+    { screen: 'Article', action: 'highlight', target: 'paragraph under "History"', value: 'founded in 2013', expect: 'The founding year is selected' }] });
+  expect(lacksAttention(pointed)).toBe(false);
+  expect(scriptSteps(pointed.steps).some(step => step.action === 'highlight')).toBe(false);
 });
