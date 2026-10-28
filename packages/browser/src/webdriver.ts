@@ -160,6 +160,24 @@ export function underlinePoint(box: Box, progress: number): Point {
 const committingLabel = /(?:^|\s)(?:criar|enviar|ativar|publicar|confirmar|salvar|lançar|create|send|activate|publish|confirm|save|launch|submit)\b/iu;
 
 /**
+ * The passage to highlight: `text` (case and spacing aside) inside the element, or in its nearest ancestor holding it,
+ * else the element's own text. "measure" returns its line boxes and whether a press there would act on a control
+ * instead of selecting; "select" makes it the page's selection, exactly.
+ */
+const highlightScript = `const e=arguments[0],wanted=(arguments[1]||'').replace(/\\s+/g,' ').trim().toLowerCase(),mode=arguments[2];
+const rangeIn=root=>{const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];let flat='',map=[];
+for(let n=w.nextNode();n;n=w.nextNode()){const t=n.data;for(let i=0;i<t.length;i++){const c=/\\s/.test(t[i])?' ':t[i].toLowerCase();if(c===' '&&flat.endsWith(' '))continue;flat+=c;map.push([n,i]);}nodes.push(n);}
+if(!nodes.length)return null;const r=document.createRange();
+if(!wanted){const first=nodes.find(n=>n.data.trim()),last=[...nodes].reverse().find(n=>n.data.trim());if(!first)return null;r.setStart(first,first.data.search(/\\S/));r.setEnd(last,last.data.replace(/\\s+$/,'').length);return r;}
+const at=flat.indexOf(wanted);if(at<0)return null;const a=map[at],b=map[at+wanted.length-1];r.setStart(a[0],a[1]);r.setEnd(b[0],b[1]+1);return r;};
+let range=null;for(let n=e,k=0;n&&k<8&&!range;n=n.parentElement,k++)range=rangeIn(n);
+if(!range)return {missing:true};
+if(mode==='select'){const s=getSelection();s.removeAllRanges();s.addRange(range);return {selected:s.toString().length};}
+const rects=[...range.getClientRects()].filter(r=>r.width>1&&r.height>1).map(r=>({x:r.left,y:r.top,width:r.width,height:r.height}));
+const holder=range.startContainer.parentElement;
+return {rects,interactive:!!holder?.closest('a,button,label,input,textarea,select,summary,[draggable=true],[role=button],[role=link]'),length:range.toString().length};`;
+
+/**
  * The rows to sweep. Agents name a list by something clickable in it (a link in the first row), so an element inside a
  * table or list sweeps that table or list, from its own row down; an element holding rows sweeps them from the top.
  */
@@ -2100,7 +2118,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
    * sweep down the first rows of a list or table. Recorded as an `emphasis` moment with the element's box, so the
    * camera frames it. Off camera there is nothing to show and nothing happens.
    */
-  async gesture(kind: GestureKind, target: BrowserTarget, options: { rows?: number } = {}): Promise<void> {
+  async gesture(kind: GestureKind, target: BrowserTarget, options: { rows?: number; text?: string } = {}): Promise<void> {
     const element = await this.elementForTarget(target);
     await this.assertElementAllowed(element);
     if (this.recordingStartedAtMs === null) return;
@@ -2126,6 +2144,21 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
         .filter(row => [row.x, row.y, row.width, row.height].every(Number.isFinite));
       if (!rows.length) throw new WebDriverProtocolError("no_rows_to_sweep");
     }
+    // The passage's line boxes, measured first for the same reason.
+    let lines: Box[] = [];
+    let pressable = true;
+    let characters = 0;
+    if (kind === "highlight") {
+      const raw = await this.executeScript("gesture_text", highlightScript, [{ [elementKey]: element }, (options.text ?? "").slice(0, 300), "measure"]);
+      if (!isObject(raw) || raw.missing === true) throw new WebDriverProtocolError("text_to_highlight_not_found");
+      lines = (Array.isArray(raw.rects) ? raw.rects : []).filter(isObject)
+        .map(line => clip({ x: Number(line.x), y: Number(line.y), width: Number(line.width), height: Number(line.height) }))
+        .filter(line => [line.x, line.y, line.width, line.height].every(Number.isFinite));
+      if (!lines.length) throw new WebDriverProtocolError("text_to_highlight_not_found");
+      // A press inside a link or a button would act on it: there the cursor draws the stroke and the page is told the selection.
+      pressable = raw.interactive !== true;
+      characters = numeric(raw.length, 20);
+    }
     const startedAt = Date.now();
     const inside = (point: Point): Point => ({
       x: Math.min(viewWidth - 1, Math.max(0, point.x)), y: Math.min(viewHeight - 1, Math.max(0, point.y)) });
@@ -2139,6 +2172,30 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       } else if (kind === "underline") {
         await this.movePointerTo(element, inside(underlinePoint(box, 0)));
         await this.glidePointer(600 + this.motion() * 300, progress => inside(underlinePoint(box, progress)));
+      } else if (kind === "highlight") {
+        // Pressed at the passage's first character and dragged to its last, as a presenter selects text to stress it.
+        const first = lines[0]!, last = lines[lines.length - 1]!;
+        const from = inside({ x: Math.round(first.x + 1), y: Math.round(first.y + first.height / 2) });
+        const to = inside({ x: Math.round(last.x + last.width - 1), y: Math.round(last.y + last.height / 2) });
+        await this.movePointerTo(element, from);
+        const press = (type: "pointerDown" | "pointerUp") => this.transport.request("POST", `${this.basePath}/actions`, {
+          actions: [{ type: "pointer", id: "mouse", parameters: { pointerType: "mouse" }, actions: [{ type, button: 0 }] }],
+        });
+        if (pressable) await press("pointerDown");
+        try {
+          await this.glidePointer(Math.min(1_400, 450 + characters * 12), progress => {
+            const eased = minimumJerk(progress);
+            return { x: Math.round(from.x + (to.x - from.x) * eased), y: Math.round(from.y + (to.y - from.y) * eased) };
+          });
+        } finally {
+          if (pressable) await press("pointerUp");
+        }
+        // The exact passage, whatever the drag caught (a line break, a page that blocks drag selection).
+        await this.executeScript("gesture_select", highlightScript, [{ [elementKey]: element }, (options.text ?? "").slice(0, 300), "select"]).catch(() => undefined);
+        await this.restPointer(500 + this.motion() * 300);
+        const top = Math.min(...lines.map(line => line.y)), bottom = Math.max(...lines.map(line => line.y + line.height));
+        const left = Math.min(...lines.map(line => line.x)), right = Math.max(...lines.map(line => line.x + line.width));
+        box = { x: left, y: top, width: right - left, height: bottom - top };
       } else {
         // Down the left third of each row, where its name usually is, stopping on each one.
         const along = (row: Box): Point => inside({ x: Math.round(row.x + Math.min(row.width / 3, 240)), y: Math.round(row.y + row.height / 2) });

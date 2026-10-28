@@ -630,13 +630,16 @@ export class Recorder {
         }
         case 'browser_point':
         case 'browser_trace':
-        case 'browser_sweep': {
+        case 'browser_sweep':
+        case 'browser_highlight': {
           // Data is rarely clickable, so the outline has no ref for a number or a cell: a point on screen names it then.
           const target = typeof args.ref === 'string' ? { type: 'ref' as const, ref: args.ref } : {
             type: 'coordinate' as const, x: z.number().min(0).max(1919).parse(args.x), y: z.number().min(0).max(1079).parse(args.y),
           };
-          const kind = name === 'browser_point' ? 'point' : name === 'browser_sweep' ? 'sweep' : z.enum(['circle', 'underline']).parse(args.shape);
-          const options = name === 'browser_sweep' && args.rows !== undefined ? { rows: z.number().int().min(1).max(5).parse(args.rows) } : undefined;
+          const kind = name === 'browser_point' ? 'point' : name === 'browser_sweep' ? 'sweep' : name === 'browser_highlight' ? 'highlight'
+            : z.enum(['circle', 'underline']).parse(args.shape);
+          const options = name === 'browser_sweep' && args.rows !== undefined ? { rows: z.number().int().min(1).max(5).parse(args.rows) }
+            : name === 'browser_highlight' && args.text !== undefined ? { text: z.string().trim().min(1).max(300).parse(args.text) } : undefined;
           // A driver without gestures (Toru for Chrome before them, a Mac window) still points the cursor at the element.
           try {
             if (!driver.gesture) throw new Error('local_method_forbidden');

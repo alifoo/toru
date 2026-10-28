@@ -188,6 +188,10 @@ it('refuses a run without the agent plan, or with a malformed one, before openin
   const h = await harness();
   await expect(h.controller.call(h.owner, 'recording_run', { requestId: randomUUID(), url: 'https://app.example.com', goal: 'Create a demo item' })).rejects.toThrow('plan_required');
   await expect(h.controller.call(h.owner, 'recording_run', { requestId: randomUUID(), url: 'https://app.example.com', goal: 'Create a demo item', plan: { steps: [], finalState: 'x' } })).rejects.toThrow('plan_invalid');
+  // A presentation that points nothing out is sent back for its attention points.
+  const walkthrough = { steps: [{ screen: 'Items', action: 'click', target: 'button "New item"', expect: 'The form opens' }], finalState: 'The new item is listed' };
+  await expect(h.controller.call(h.owner, 'recording_run', { requestId: randomUUID(), url: 'https://app.example.com', goal: 'Create a demo item',
+    plan: { ...walkthrough, intent: 'presentation' } })).rejects.toThrow('plan_needs_attention');
   expect(h.recorder.calls).toEqual([]);
 });
 

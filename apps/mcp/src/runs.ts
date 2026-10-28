@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { compilePlan, planSchema, planValues } from './run-plan.js';
+import { compilePlan, lacksAttention, planSchema, planValues } from './run-plan.js';
 import { viewportSchema } from './viewport.js';
 import type { AuthorizationCheck } from './lifecycle.js';
 import type { RecorderDatabase } from './store/database.js';
@@ -17,7 +17,7 @@ const ACTIVE: readonly RunState[] = ['planning', 'connecting', 'awaiting_code', 
 const WAITS_FOR_USER: readonly RunState[] = ['needs_input', 'awaiting_code'];
 /** Calls on a driving run's session that count as the agent's actions in the run. */
 const AGENT_ACTIONS = new Set(['browser_click', 'browser_type', 'browser_key', 'browser_scroll', 'browser_select', 'browser_navigate',
-  'browser_point', 'browser_trace', 'browser_sweep', 'browser_read']);
+  'browser_point', 'browser_trace', 'browser_sweep', 'browser_highlight', 'browser_read']);
 /** Only the run stops its own capture, after holding on the result. An agent that stops it the step-by-step way (an MCP
  * client that listed its tools before recording_run_finish existed does) finishes the run instead: stop = reached. */
 const FINISHES_RUN: Record<string, 'reached' | 'stuck'> = { recording_stop: 'reached', recording_cancel: 'stuck', session_close: 'stuck' };
@@ -49,7 +49,9 @@ type Checkpoint = { state: RunState; sessionId?: string; connectionId?: string; 
 type AgentOutcome = { outcome: 'reached' | 'stuck' | 'idle'; note?: string };
 type Run = Checkpoint & { id: string; owner: string; requestId: string; inputHash: string; controller: AbortController; done: Promise<void>; authorize?: AuthorizationCheck;
   /** While agent_driving: what the plan must end on, when the agent last called a tool on the session, and how the run hears it finished. */
-  finalState?: string; lastAgentAt?: number; finish?: (outcome: AgentOutcome) => void };
+  finalState?: string; lastAgentAt?: number; finish?: (outcome: AgentOutcome) => void;
+  /** The plan asked for a presentation: the driving instruction says to make its attention steps. */
+  presentation?: boolean };
 type Call = (owner: string, name: string, args: unknown, authorize?: AuthorizationCheck) => Promise<CallToolResult>;
 export type RunStore = { artifactDir(owner: string, sessionId: string): Promise<string> };
 const reply = (data: Record<string, unknown>): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data });
@@ -119,7 +121,7 @@ export class RunController {
       ? { nextCall: { name: 'browser_observe', arguments: { id: run.sessionId } }, agentDriving: true,
           ...(run.finalState ? { finalState: run.finalState } : {}),
           ...(run.handoff ? { handoff: { from: run.handoff, ...(run.navigationReason ? { reason: run.navigationReason } : {}), ...(run.lastPage ? { lastPage: run.lastPage } : {}) } } : {}),
-          instruction: `${run.handoff ? `The Toru navigator stopped short (${run.handoff}) and the capture is still running: you take over from the current screen. ` : 'You drive this recording: the capture is running. '}Follow your plan one action at a time with browser_observe, browser_click, browser_type, browser_key, browser_scroll, browser_select and browser_wait on sessionId, inspecting each returned screenshot before the next action. When finalState is visible, call mark_demo_moment kind result with that screenshot's observationId, then recording_run_finish {runId, outcome:"reached"}: Toru holds on the result, stops, renders and checks the video. If the flow cannot be completed, call recording_run_finish with outcome:"stuck". Without recording_run_finish in your tool list, recording_stop on sessionId finishes the run as reached. Never call recording_render for this session. After ${Math.round((run.handoff ? this.handoffIdleMs : this.agentIdleMs) / 60_000)} minutes without a call on the session the run stops.` }
+          instruction: `${run.handoff ? `The Toru navigator stopped short (${run.handoff}) and the capture is still running: you take over from the current screen. ` : 'You drive this recording: the capture is running. '}Follow your plan one action at a time with browser_observe, browser_click, browser_type, browser_key, browser_scroll, browser_select and browser_wait on sessionId, inspecting each returned screenshot before the next action.${run.presentation ? ' This is a presentation: on each content screen, make the plan\'s attention steps (browser_point, browser_trace, browser_sweep, browser_highlight) before moving on, never on transition screens.' : ''} When finalState is visible, call mark_demo_moment kind result with that screenshot's observationId, then recording_run_finish {runId, outcome:"reached"}: Toru holds on the result, stops, renders and checks the video. If the flow cannot be completed, call recording_run_finish with outcome:"stuck". Without recording_run_finish in your tool list, recording_stop on sessionId finishes the run as reached. Never call recording_render for this session. After ${Math.round((run.handoff ? this.handoffIdleMs : this.agentIdleMs) / 60_000)} minutes without a call on the session the run stops.` }
       : active ? { nextCall: { name: 'recording_run_status', arguments: { runId: run.id, waitMs: 25000 } }, instruction: 'The run continues on the server. Keep calling recording_run_status (waits up to 25 seconds); do not open sessions or record manually meanwhile.' }
       : run.state === 'done' && run.sessionId ? { nextCall: { name: 'recording_links', arguments: { id: run.sessionId } }, instruction: 'The demo passed the delivery check. Call recording_links with the session id and give the user the video link.' }
       : run.state === 'needs_review' && run.sessionId ? { nextCall: { name: 'recording_status', arguments: { id: run.sessionId } }, instruction: `The video failed the delivery check (${(run.qualityReasons ?? []).join(', ')}); it was not delivered and no credit was used. Start a new run with a corrected flow, or call recording_render with acceptReview:true on the session id if the user wants it anyway.` }
@@ -191,6 +193,7 @@ export class RunController {
       if (!planSchema.safeParse((raw as Record<string, unknown>).plan).success) throw new Error('plan_invalid');
       const parsed = runSchema.parse(raw);
       const plan = parsed.plan!;
+      if (lacksAttention(plan)) throw new Error('plan_needs_attention');
       // The plan becomes the navigator's script; its values fill the fields it names, unless the agent gave others.
       const fromPlan = planValues(plan);
       const input = { ...parsed, navigator: parsed.navigator ?? this.defaultNavigator, guidance: compilePlan(plan, parsed.guidance), values: { ...fromPlan.values, ...parsed.values }, sequences: fromPlan.sequences };
@@ -203,6 +206,7 @@ export class RunController {
       const route = input.localConnectionId ? 'local-browser' : input.importId ? 'hosted-import' : input.useDemoAccount ? 'hosted-demo-account' : input.loginEmail ? 'hosted-email-only' : 'hosted';
       const run: Run = { id: randomUUID(), owner, requestId: input.requestId, inputHash, state: 'planning', actions: 0, decisions: 0, costUsd: 0, startedAt: Date.now(), stages: { planning: Date.now() },
         title: runTitle(input.goal), url: input.url, route, navigator: input.navigator, finalState: plan.finalState,
+        ...(plan.intent === 'presentation' ? { presentation: true } : {}),
         controller: new AbortController(), done: Promise.resolve(), ...(authorize ? { authorize } : {}) };
       this.runs.set(run.id, run); this.persist(run);
       run.done = this.execute(run, input);

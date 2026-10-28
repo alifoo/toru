@@ -20,16 +20,24 @@ Gestures show without pressing. Each one is in the video, and the camera frames 
 | `browser_trace {ref, shape: "circle"}` | One loop around the element | The proof that the flow worked: a total, a card, a new row |
 | `browser_trace {ref, shape: "underline"}` | A stroke under a line of text | A title, a sentence in a preview, a value in a sentence |
 | `browser_sweep {ref, rows?}` | The cursor runs down the first rows of a list or table (1–5, default 4) | Showing that there are several results and what they hold |
+| `browser_highlight {ref, text?}` | The cursor presses at the first word and drags to the last, leaving the passage selected | The exact words that matter: a sentence in a preview, a value, a name |
 | `browser_read {amount?}` | Smooth scrolling in steps, pausing to read | A long page that should be seen, not jumped |
 | `browser_move {x, y}` | The cursor leaves the content | After the final emphasis, so nothing covers the result |
 
 Data is rarely clickable, so the outline often has no ref for a number or a cell: pass `x, y` (CSS pixels, as for `browser_click`) instead of `ref`. A sweep named by a link inside a table row sweeps that table from the row down, and a gesture on something scrolled out of view scrolls back to it first.
 
-In a plan, write these steps as the actions `point`, `trace` (the `value` is `circle` or `underline`), `sweep` and `read`.
+In a plan, write these steps as the actions `point`, `trace` (the `value` is `circle` or `underline`), `sweep`, `highlight` (the `value` is the exact passage) and `read`.
+
+## Walkthrough or presentation
+
+Read what the user asked for:
+
+- **Walkthrough** (`"record the flow"`, a tutorial, a bug reproduction): follow the screens. At most one gesture, on the result.
+- **Presentation** (`"show"`, `"demonstrate"`, `"present"` a feature, a launch or sales video): demonstrate it as a person would. Set `intent: "presentation"` in the plan, and for each content screen write what the viewer should notice and why, as attention steps: point at the number that changed, highlight the sentence that explains it, sweep the results, circle the proof. Two or three per content screen, none on transition screens. Toru refuses a presentation plan with no attention steps (`plan_needs_attention`).
 
 ## Rules
 
-1. **One gesture per content screen** at most, two on the result screen. Too many gestures becomes the new defect.
+1. **Gestures follow the intent.** A walkthrough: one, on the result. A presentation: two or three per content screen. Never more: a cursor that never rests becomes the new defect.
 2. **No gestures on transition screens.** On a wizard step with "Next", a tab, a menu or a loading screen, click and move on.
 3. **Before the result, emphasize the proof** (circle the total, sweep the new rows). Then `mark_demo_moment` kind `result`, `browser_move` away from it, and hold.
 4. **Gestures go on data and results only.** Never circle a button label, a menu item or a field name, and never shake or spin the cursor without a target.
