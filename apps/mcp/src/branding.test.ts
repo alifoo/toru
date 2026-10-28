@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { applyBrand, brandWallpaper, cardColour, makeGif } from './branding.js';
+import { applyBrand, brandWallpaper, cardColour, makeGif, redactRegions } from './branding.js';
 const exec = promisify(execFile);
 let dir: string, video: Buffer, logo: string;
 beforeAll(async () => {
@@ -40,4 +40,14 @@ it('produces a looping GIF from the MP4', async () => {
   const gif = await readFile(join(dir, 'demo.gif'));
   expect(gif.subarray(0, 6).toString()).toBe('GIF89a');
   expect(gif.length).toBeGreaterThan(1000);
+}, 60000);
+it('blurs odd-placed and tiny regions without changing the frame', async () => {
+  const out = join(dir, 'redacted.mp4');
+  await redactRegions(join(dir, 'in.mp4'), out, [
+    { x: 0.1013, y: 0.2207, width: 0.31, height: 0.07, startMs: 0, endMs: 1500 },
+    { x: 0.5, y: 0.5, width: 0.004, height: 0.006, startMs: 0, endMs: 2000 },
+  ]);
+  const { stdout } = await exec('ffprobe', ['-v', 'error', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', out]);
+  expect(stdout.trim()).toBe('640,360');
+  expect(await duration(out)).toBeCloseTo(2, 0);
 }, 60000);

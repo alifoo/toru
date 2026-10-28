@@ -686,6 +686,42 @@ it('blurs where the recorded window showed who the user is, in the source the re
   }
 });
 
+it('leaves e-mails unblurred, in the page and in the render, when the user asked to show them', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'recorder-show-emails-'));
+  const owner = randomUUID();
+  const driver = {
+    goto: vi.fn(async () => undefined), dispose: vi.fn(async () => undefined), startRecording: vi.fn(), recordingMode: 'screencast',
+    redactSensitiveText: vi.fn(), stopRecording: vi.fn(async () => ({ body: Buffer.from('raw capture'), redactionPassed: true })),
+    screenshot: vi.fn(async () => ({ body: Buffer.from('preview'), redactionPassed: true })),
+    pointerTrail: () => [], pointerTelemetry: () => [], semanticTimeline: () => [],
+    identitySightings: () => [{ atMs: 400, rects: [{ x: 0.6, y: 0.4, width: 0.2, height: 0.04 }] }],
+  };
+  const redactRegions = vi.fn(async (_source: string, output: string) => { await writeFile(output, 'redacted capture'); });
+  const sources: string[] = [];
+  const render = vi.fn(async (source: string) => { sources.push(await readFile(source, 'utf8')); return Buffer.from('video'); });
+  const recorder = new Recorder({ dataDir: dir, encryptionKey: randomBytes(32),
+    createContext: vi.fn(async () => driver) as unknown as RecorderOptions['createContext'],
+    createLocalContext: vi.fn(async () => driver) as unknown as NonNullable<RecorderOptions['createLocalContext']>, render, redactRegions,
+    assessQuality: async () => ({ passed: true, reasons: [], metrics: {} }) });
+  try {
+    await recorder.initialize();
+    const id = String((await recorder.call(owner, 'session_open', { url: 'https://app.example.com/', localConnectionId: randomUUID(), showEmails: true })).structuredContent?.id);
+    await recorder.call(owner, 'recording_start', { id });
+    await new Promise(resolve => setTimeout(resolve, 60));
+    await recorder.call(owner, 'recording_stop', { id });
+    expect(driver.redactSensitiveText).not.toHaveBeenCalled();
+    const observation = JSON.parse(await readFile(join(dir, 'jobs', id, 'observation.json'), 'utf8'));
+    expect(observation.redactions).toBeUndefined();
+    await recorder.call(owner, 'recording_render', { id });
+    await vi.waitFor(async () => expect((await recorder.call(owner, 'recording_status', { id })).structuredContent?.status).toBe('completed'));
+    expect(redactRegions).not.toHaveBeenCalled();
+    expect(sources).toEqual(['raw capture']);
+  } finally {
+    await recorder.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 it('records the raw video size of a capture at a device scale, keeping coordinates in the viewport', async () => {
  expect(videoSize({width:1280,height:720},{width:2560,height:1440})).toEqual({videoWidth:2560,videoHeight:1440});
  expect(videoSize({width:1280,height:720},{width:1920,height:1080})).toEqual({videoWidth:1920,videoHeight:1080});

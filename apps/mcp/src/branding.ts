@@ -102,8 +102,10 @@ export async function redactRegions(sourcePath: string, outputPath: string, regi
   const { width, height } = await probe(sourcePath);
   const even = (value: number) => Math.max(2, Math.round(value / 2) * 2);
   const boxes = regions.slice(0, 80).map(region => {
-    const x = Math.min(width - 2, Math.max(0, Math.floor(region.x * width)));
-    const y = Math.min(height - 2, Math.max(0, Math.floor(region.y * height)));
+    // Even offsets too: yuv420p keeps one chroma sample per 2x2 block, and a box cropped or overlaid at an odd
+    // pixel shifts the colour against the brightness, which shows as green stripes over the blur.
+    const x = Math.min(width - 2, Math.max(0, Math.floor(region.x * width / 2) * 2));
+    const y = Math.min(height - 2, Math.max(0, Math.floor(region.y * height / 2) * 2));
     return { x, y, w: Math.min(even(region.width * width), width - x), h: Math.min(even(region.height * height), height - y),
       from: (region.startMs / 1000).toFixed(3), to: (region.endMs / 1000).toFixed(3) };
   }).filter(box => box.w >= 2 && box.h >= 2);
@@ -111,10 +113,12 @@ export async function redactRegions(sourcePath: string, outputPath: string, regi
   const labels = boxes.map((_box, index) => `[c${index}]`).join('');
   const parts = [`[0:v]split=${boxes.length + 1}[s0]${labels}`];
   boxes.forEach((box, index) => {
-    // Strong enough that a name cannot be read back. A Gaussian has no radius ceiling tied to the box size,
-    // which boxblur has, so a small footer gets the same treatment as a large one.
-    const sigma = Math.max(8, Math.min(30, Math.round(Math.min(box.w, box.h) / 3)));
-    parts.push(`[c${index}]crop=${box.w}:${box.h}:${box.x}:${box.y},gblur=sigma=${sigma}:steps=3[b${index}]`);
+    // Strong enough that a name cannot be read back: shrunk to a few pixels a line, grown back and softened.
+    // Not gblur: on the x86 render hosts it left thin black and green bars over the text (28/10/2026), and a
+    // box blur alone has a radius ceiling tied to the box size, so a small footer would stay readable.
+    const small = `${Math.max(2, Math.round(box.w / 20))}:${Math.max(2, Math.round(box.h / 20))}`;
+    const radius = Math.min(6, Math.floor(Math.min(box.w, box.h) / 4));
+    parts.push(`[c${index}]crop=${box.w}:${box.h}:${box.x}:${box.y},scale=${small}:flags=area,scale=${box.w}:${box.h}:flags=bicubic${radius >= 1 ? `,boxblur=${radius}:1` : ''}[b${index}]`);
     parts.push(`[s${index}][b${index}]overlay=${box.x}:${box.y}:enable='between(t,${box.from},${box.to})'[s${index + 1}]`);
   });
   await run(['-i', sourcePath, '-filter_complex', parts.join(';'), '-map', `[s${boxes.length}]`, '-an',

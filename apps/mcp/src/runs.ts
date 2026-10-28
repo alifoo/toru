@@ -37,6 +37,8 @@ export const runSchema = z.object({
   loginEmail: z.string().trim().min(3).max(320).optional(), useDemoAccount: z.boolean().optional(),
   /** The page layout Toru for Chrome records (CSS viewport); 1920x1080 when absent. */
   viewport: viewportSchema.optional(),
+  /** Toru for Chrome: the user approved showing e-mail addresses (their own product's), so nothing is blurred. */
+  showEmails: z.boolean().optional().describe("Toru for Chrome only: true when the user asked to show the e-mail addresses on screen (their own product). Neither the page nor the render blurs them then. Leave it out otherwise."),
   render: z.object({ background: z.enum(['midnight', 'ocean', 'sunset', ...backgroundCatalog.map(entry => entry.id)] as [string, ...string[]]).optional(), padding: z.number().finite().min(0).max(100).optional(),
     cursorScale: z.number().finite().min(0.5).max(3).optional(), compressPauses: z.boolean().optional(), gif: z.boolean().optional(), width: z.union([z.literal(1280), z.literal(1920), z.literal(2560)]).optional() }).default({}),
 });
@@ -294,7 +296,7 @@ export class RunController {
         if (run.state !== 'planning') await enter('planning');
       }
       const session = await call('session_open', { url: openUrl, requestId: run.id, ...(input.localConnectionId ? { localConnectionId: input.localConnectionId } : {}), ...(input.viewport ? { viewport: input.viewport } : {}),
-        ...(importId ? { importId } : {}), ...(input.allowedOrigins ? { allowedOrigins: input.allowedOrigins } : {}) });
+        ...(input.showEmails ? { showEmails: true } : {}), ...(importId ? { importId } : {}), ...(input.allowedOrigins ? { allowedOrigins: input.allowedOrigins } : {}) });
       if (typeof session.id !== 'string' || session.status !== 'ready') throw new Error('session_not_ready');
       run.sessionId = session.id; this.persist(run);
       const dir = await this.artifacts.artifactDir(run.owner, session.id);
