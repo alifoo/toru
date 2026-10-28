@@ -38,7 +38,7 @@ function Heading({id,title}:{id:string;title:string}){
 
 export function PublicLanding(){
  const schema={'@context':'https://schema.org','@graph':[
-  {'@type':'Organization','@id':'https://toru.tools/#organization',name:'Toru',url:'https://toru.tools',logo:'https://toru.tools/icon.png',email:'support@toru.tools'},
+  {'@type':'Organization','@id':'https://toru.tools/#organization',name:'Toru',url:'https://toru.tools',logo:'https://toru.tools/icon.png',description:'A recording tool your AI agent uses on its own to record your product demos in your own Chrome or on your Mac.',email:'support@toru.tools'},
   {'@type':'SoftwareApplication',name:'Toru',url:'https://toru.tools',applicationCategory:'MultimediaApplication',operatingSystem:'Web, macOS',description:recordingFaqs[0]!.answer,offers:plans.map(plan=>({'@type':'Offer',name:plan.name,price:String(plan.price),priceCurrency:'USD',url:'https://toru.tools/pricing'}))},
   {'@type':'FAQPage',mainEntity:landingFaqs.map(item=>({'@type':'Question',name:item.question,acceptedAnswer:{'@type':'Answer',text:item.answer}}))},
  ]};
