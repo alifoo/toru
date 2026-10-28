@@ -175,7 +175,8 @@ if(!range)return {missing:true};
 if(mode==='select'){const s=getSelection();s.removeAllRanges();s.addRange(range);return {selected:s.toString().length};}
 const rects=[...range.getClientRects()].filter(r=>r.width>1&&r.height>1).map(r=>({x:r.left,y:r.top,width:r.width,height:r.height}));
 const holder=range.startContainer.parentElement;
-return {rects,interactive:!!holder?.closest('a,button,label,input,textarea,select,summary,[draggable=true],[role=button],[role=link]'),length:range.toString().length};`;
+const control='a,button,label,input,textarea,select,summary,[draggable=true],[role=button],[role=link]';
+return {rects,interactive:!!holder?.closest(control),endsOnControl:!!range.endContainer.parentElement?.closest(control),length:range.toString().length};`;
 
 /**
  * The rows to sweep. Agents name a list by something clickable in it (a link in the first row), so an element inside a
@@ -2148,6 +2149,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
     let lines: Box[] = [];
     let pressable = true;
     let characters = 0;
+    let endsOnControl = false;
     if (kind === "highlight") {
       const raw = await this.executeScript("gesture_text", highlightScript, [{ [elementKey]: element }, (options.text ?? "").slice(0, 300), "measure"]);
       if (!isObject(raw) || raw.missing === true) throw new WebDriverProtocolError("text_to_highlight_not_found");
@@ -2158,6 +2160,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       // A press inside a link or a button would act on it: there the cursor draws the stroke and the page is told the selection.
       pressable = raw.interactive !== true;
       characters = numeric(raw.length, 20);
+      endsOnControl = raw.endsOnControl === true;
     }
     const startedAt = Date.now();
     const inside = (point: Point): Point => ({
@@ -2192,6 +2195,14 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
         }
         // The exact passage, whatever the drag caught (a line break, a page that blocks drag selection).
         await this.executeScript("gesture_select", highlightScript, [{ [elementKey]: element }, (options.text ?? "").slice(0, 300), "select"]).catch(() => undefined);
+        if (endsOnControl) {
+          // Resting on a link opens its hover card (Wikipedia's page preview) over the passage: step just below the line.
+          const below = inside({ x: to.x, y: Math.round(last.y + last.height + 14) });
+          await this.glidePointer(220, progress => {
+            const eased = minimumJerk(progress);
+            return { x: Math.round(to.x + (below.x - to.x) * eased), y: Math.round(to.y + (below.y - to.y) * eased) };
+          });
+        }
         await this.restPointer(500 + this.motion() * 300);
         const top = Math.min(...lines.map(line => line.y)), bottom = Math.max(...lines.map(line => line.y + line.height));
         const left = Math.min(...lines.map(line => line.x)), right = Math.max(...lines.map(line => line.x + line.width));

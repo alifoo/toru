@@ -44,6 +44,7 @@ class ProtocolHarness implements WebDriverTransport {
   windowRect = { width: 1280, height: 720, x: 0, y: 0 };
   browserChrome = { width: 0, height: 0 };
   targetDescription = "Search";
+  passage: unknown = { rects: [{ x: 200, y: 400, width: 300, height: 20 }], interactive: false, endsOnControl: true, length: 20 };
   rows: unknown = [{ x: 100, y: 100, width: 800, height: 40 }, { x: 100, y: 140, width: 800, height: 40 }, { x: 100, y: 180, width: 800, height: 40 }];
   /** Ref lookups miss when this is null, which is how a stale ref is simulated. */
   refElement: string | null = "element-1";
@@ -84,6 +85,7 @@ class ProtocolHarness implements WebDriverTransport {
     }
     if (path.endsWith("/execute/sync")) {
       const script = (body as { script: string }).script;
+      if (script.includes("wanted=(arguments[1]")) return (body as { args: unknown[] }).args[2] === "select" ? { selected: 20 } : this.passage;
       if (script.includes("createTreeWalker(root,NodeFilter.SHOW_TEXT)")) return this.identityRects;
       if (script.includes("tbody tr")) return this.rows;
       if (script.includes("y:r.top,width:r.width")) return { x: 400, y: 300, width: 200, height: 40, w: 1280, h: 720 };
@@ -1768,12 +1770,12 @@ describe("gestures", () => {
     expect(underlinePoint(box, 1)).toEqual({ x: 600, y: 346 });
   });
 
-  it("records each gesture as an emphasis moment framed on the element, without pressing", async () => {
+  it("records each gesture as an emphasis moment framed on the element; only a highlight presses", { timeout: 20_000 }, async () => {
     const protocol = new ProtocolHarness();
     const context = await new WebDriverBrowserDriver(protocol, {
       resolveHostname: async () => ["93.184.216.34"],
     }).createContext(contextOptions()) as unknown as BrowserContextDriver & {
-      gesture(kind: string, target: unknown, options?: { rows?: number }): Promise<void>;
+      gesture(kind: string, target: unknown, options?: { rows?: number; text?: string }): Promise<void>;
       semanticTimeline(): Array<{ type: string; element: string; atMs: number; endMs?: number; focus?: unknown }>;
     };
     try {
@@ -1792,6 +1794,18 @@ describe("gestures", () => {
       expect(emphasis.every(moment => moment.endMs! > moment.atMs)).toBe(true);
       protocol.rows = [];
       await expect(context.gesture("sweep", { type: "coordinate", x: 500, y: 150 })).rejects.toMatchObject({ code: "no_rows_to_sweep" });
+      // A highlight presses at the passage's start, drags to its end, releases, then sets the exact selection.
+      const before2 = protocol.calls.length;
+      await context.gesture("highlight", { type: "coordinate", x: 300, y: 410 }, { text: "most populous country" });
+      const calls2 = protocol.calls.slice(before2).map(call => JSON.stringify(call.body) ?? "");
+      const down = calls2.findIndex(body => body.includes("pointerDown")), up = calls2.findIndex(body => body.includes("pointerUp"));
+      expect(down).toBeGreaterThan(-1);
+      expect(up).toBeGreaterThan(down);
+      expect(calls2.slice(down, up).some(body => body.includes("pointerMove"))).toBe(true);
+      expect(calls2.slice(up).some(body => body.includes('"select"'))).toBe(true);
+      expect(context.semanticTimeline().at(-1)).toMatchObject({ type: "emphasis", focus: { x: 200 / 1280, y: 400 / 720 } });
+      protocol.passage = { missing: true };
+      await expect(context.gesture("highlight", { type: "coordinate", x: 300, y: 410 }, { text: "absent" })).rejects.toMatchObject({ code: "text_to_highlight_not_found" });
     } finally {
       await context.dispose();
     }
