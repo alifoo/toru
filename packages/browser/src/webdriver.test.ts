@@ -85,7 +85,7 @@ class ProtocolHarness implements WebDriverTransport {
     }
     if (path.endsWith("/execute/sync")) {
       const script = (body as { script: string }).script;
-      if (script.includes("wanted=(arguments[1]")) return (body as { args: unknown[] }).args[2] === "select" ? { selected: 20 } : this.passage;
+      if (script.includes("const norm=t=>")) return (body as { args: unknown[] }).args[2] === "select" ? { selected: 20 } : this.passage;
       if (script.includes("createTreeWalker(root,NodeFilter.SHOW_TEXT)")) return this.identityRects;
       if (script.includes("tbody tr")) return this.rows;
       if (script.includes("y:r.top,width:r.width")) return { x: 400, y: 300, width: 200, height: 40, w: 1280, h: 720 };
@@ -1770,7 +1770,7 @@ describe("gestures", () => {
     expect(underlinePoint(box, 1)).toEqual({ x: 600, y: 346 });
   });
 
-  it("records each gesture as an emphasis moment framed on the element; only a highlight presses", { timeout: 20_000 }, async () => {
+  it("records each gesture as an emphasis moment framed on the element, without pressing", { timeout: 20_000 }, async () => {
     const protocol = new ProtocolHarness();
     const context = await new WebDriverBrowserDriver(protocol, {
       resolveHostname: async () => ["93.184.216.34"],
@@ -1794,15 +1794,16 @@ describe("gestures", () => {
       expect(emphasis.every(moment => moment.endMs! > moment.atMs)).toBe(true);
       protocol.rows = [];
       await expect(context.gesture("sweep", { type: "coordinate", x: 500, y: 150 })).rejects.toMatchObject({ code: "no_rows_to_sweep" });
-      // A highlight presses at the passage's start, drags to its end, releases, then sets the exact selection.
+      // A highlight runs the cursor across the passage and grows the selection under it, without pressing.
       const before2 = protocol.calls.length;
       await context.gesture("highlight", { type: "coordinate", x: 300, y: 410 }, { text: "most populous country" });
       const calls2 = protocol.calls.slice(before2).map(call => JSON.stringify(call.body) ?? "");
-      const down = calls2.findIndex(body => body.includes("pointerDown")), up = calls2.findIndex(body => body.includes("pointerUp"));
-      expect(down).toBeGreaterThan(-1);
-      expect(up).toBeGreaterThan(down);
-      expect(calls2.slice(down, up).some(body => body.includes("pointerMove"))).toBe(true);
-      expect(calls2.slice(up).some(body => body.includes('"select"'))).toBe(true);
+      expect(calls2.some(body => body.includes("pointerDown"))).toBe(false);
+      const fractions = protocol.calls.slice(before2).map(call => (call.body as { args?: unknown[] } | undefined)?.args)
+        .filter(args => args?.[2] === "select").map(args => Number(args![3]));
+      expect(fractions.length).toBeGreaterThan(3);
+      expect(fractions.at(-1)).toBe(1);
+      expect(fractions.every((value, index) => index === 0 || value >= fractions[index - 1]!)).toBe(true);
       expect(context.semanticTimeline().at(-1)).toMatchObject({ type: "emphasis", focus: { x: 200 / 1280, y: 400 / 720 } });
       protocol.passage = { missing: true };
       await expect(context.gesture("highlight", { type: "coordinate", x: 300, y: 410 }, { text: "absent" })).rejects.toMatchObject({ code: "text_to_highlight_not_found" });

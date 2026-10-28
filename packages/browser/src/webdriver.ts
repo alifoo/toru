@@ -161,22 +161,22 @@ const committingLabel = /(?:^|\s)(?:criar|enviar|ativar|publicar|confirmar|salva
 
 /**
  * The passage to highlight: `text` (case and spacing aside) inside the element, or in its nearest ancestor holding it,
- * else the element's own text. "measure" returns its line boxes and whether a press there would act on a control
- * instead of selecting; "select" makes it the page's selection, exactly.
+ * else the element's own text. "measure" returns its line boxes and whether it ends on a control; "select" makes the
+ * first `arguments[3]` (0–1) of it the page's selection, so the highlight grows with the cursor.
  */
-const highlightScript = `const e=arguments[0],wanted=(arguments[1]||'').replace(/\\s+/g,' ').trim().toLowerCase(),mode=arguments[2];
-const rangeIn=root=>{const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];let flat='',map=[];
-for(let n=w.nextNode();n;n=w.nextNode()){const t=n.data;for(let i=0;i<t.length;i++){const c=/\\s/.test(t[i])?' ':t[i].toLowerCase();if(c===' '&&flat.endsWith(' '))continue;flat+=c;map.push([n,i]);}nodes.push(n);}
-if(!nodes.length)return null;const r=document.createRange();
-if(!wanted){const first=nodes.find(n=>n.data.trim()),last=[...nodes].reverse().find(n=>n.data.trim());if(!first)return null;r.setStart(first,first.data.search(/\\S/));r.setEnd(last,last.data.replace(/\\s+$/,'').length);return r;}
-const at=flat.indexOf(wanted);if(at<0)return null;const a=map[at],b=map[at+wanted.length-1];r.setStart(a[0],a[1]);r.setEnd(b[0],b[1]+1);return r;};
+const highlightScript = `const e=arguments[0],mode=arguments[2],part=Math.min(1,Math.max(0,Number(arguments[3]??1)));
+const norm=t=>t.replace(/\\s+/g,' ').trim().toLowerCase();
+const wanted=norm(arguments[1]||'')||norm(e.textContent||'');
+const rangeIn=root=>{if(!wanted)return null;const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let flat='',map=[];
+for(let n=w.nextNode();n;n=w.nextNode()){const t=n.data;for(let i=0;i<t.length;i++){const c=/\\s/.test(t[i])?' ':t[i].toLowerCase();if(c===' '&&(flat===''||flat.endsWith(' ')))continue;flat+=c;map.push([n,i]);}}
+const at=flat.indexOf(wanted);if(at<0)return null;const length=Math.max(1,Math.ceil(wanted.length*part));
+const a=map[at],b=map[at+length-1];const r=document.createRange();r.setStart(a[0],a[1]);r.setEnd(b[0],b[1]+1);return r;};
 let range=null;for(let n=e,k=0;n&&k<8&&!range;n=n.parentElement,k++)range=rangeIn(n);
 if(!range)return {missing:true};
 if(mode==='select'){const s=getSelection();s.removeAllRanges();s.addRange(range);return {selected:s.toString().length};}
 const rects=[...range.getClientRects()].filter(r=>r.width>1&&r.height>1).map(r=>({x:r.left,y:r.top,width:r.width,height:r.height}));
-const holder=range.startContainer.parentElement;
 const control='a,button,label,input,textarea,select,summary,[draggable=true],[role=button],[role=link]';
-return {rects,interactive:!!holder?.closest(control),endsOnControl:!!range.endContainer.parentElement?.closest(control),length:range.toString().length};`;
+return {rects,endsOnControl:!!range.endContainer.parentElement?.closest(control),length:range.toString().length};`;
 
 /**
  * The rows to sweep. Agents name a list by something clickable in it (a link in the first row), so an element inside a
@@ -875,7 +875,8 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
    * those waits add up to twice the travel, which renders as a cursor dragging toward its target; reading the clock
    * makes a slow page cost smoothness (fewer, longer steps) instead of time.
    */
-  private async glidePointer(durationMs: number, place: (progress: number) => Point, arrivalShape?: CapturePointerShape): Promise<void> {
+  private async glidePointer(durationMs: number, place: (progress: number) => Point, arrivalShape?: CapturePointerShape,
+    onStep?: (progress: number) => Promise<unknown>): Promise<void> {
     const startedAt = performance.now();
     const maximumSteps = Math.ceil(durationMs / pointerStepMs) * 2;
     let at = this.pointerAt ?? place(0);
@@ -886,6 +887,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       if (next.x !== at.x || next.y !== at.y || progress === 1) {
         await this.pointerMoveRequest(next.x, next.y);
         this.recordDriverSample(next.x, next.y, "move", progress === 1 && arrivalShape ? arrivalShape : this.driverShape);
+        await onStep?.(progress);
       }
       at = next;
       this.pointerAt = at;
@@ -2147,7 +2149,6 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
     }
     // The passage's line boxes, measured first for the same reason.
     let lines: Box[] = [];
-    let pressable = true;
     let characters = 0;
     let endsOnControl = false;
     if (kind === "highlight") {
@@ -2157,8 +2158,6 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
         .map(line => clip({ x: Number(line.x), y: Number(line.y), width: Number(line.width), height: Number(line.height) }))
         .filter(line => [line.x, line.y, line.width, line.height].every(Number.isFinite));
       if (!lines.length) throw new WebDriverProtocolError("text_to_highlight_not_found");
-      // A press inside a link or a button would act on it: there the cursor draws the stroke and the page is told the selection.
-      pressable = raw.interactive !== true;
       characters = numeric(raw.length, 20);
       endsOnControl = raw.endsOnControl === true;
     }
@@ -2176,25 +2175,23 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
         await this.movePointerTo(element, inside(underlinePoint(box, 0)));
         await this.glidePointer(600 + this.motion() * 300, progress => inside(underlinePoint(box, progress)));
       } else if (kind === "highlight") {
-        // Pressed at the passage's first character and dragged to its last, as a presenter selects text to stress it.
+        // The cursor runs from the passage's first character to its last and the selection grows under it, as when a
+        // presenter drags across text to stress it. Nothing is pressed: a press and release over a clickable card or row
+        // would click it, and a press in a link would start dragging the link.
         const first = lines[0]!, last = lines[lines.length - 1]!;
         const from = inside({ x: Math.round(first.x + 1), y: Math.round(first.y + first.height / 2) });
         const to = inside({ x: Math.round(last.x + last.width - 1), y: Math.round(last.y + last.height / 2) });
         await this.movePointerTo(element, from);
-        const press = (type: "pointerDown" | "pointerUp") => this.transport.request("POST", `${this.basePath}/actions`, {
-          actions: [{ type: "pointer", id: "mouse", parameters: { pointerType: "mouse" }, actions: [{ type, button: 0 }] }],
-        });
-        if (pressable) await press("pointerDown");
-        try {
-          await this.glidePointer(Math.min(1_400, 450 + characters * 12), progress => {
-            const eased = minimumJerk(progress);
-            return { x: Math.round(from.x + (to.x - from.x) * eased), y: Math.round(from.y + (to.y - from.y) * eased) };
-          });
-        } finally {
-          if (pressable) await press("pointerUp");
-        }
-        // The exact passage, whatever the drag caught (a line break, a page that blocks drag selection).
-        await this.executeScript("gesture_select", highlightScript, [{ [elementKey]: element }, (options.text ?? "").slice(0, 300), "select"]).catch(() => undefined);
+        const passage = (options.text ?? "").slice(0, 300);
+        // A text cursor while selecting, as the page would show it under a hand that is dragging.
+        const shape = this.driverShape;
+        this.driverShape = "text";
+        await this.glidePointer(Math.min(1_400, 450 + characters * 12), progress => {
+          const eased = minimumJerk(progress);
+          return { x: Math.round(from.x + (to.x - from.x) * eased), y: Math.round(from.y + (to.y - from.y) * eased) };
+        }, undefined, progress => this.executeScript("gesture_select", highlightScript, [{ [elementKey]: element }, passage, "select", minimumJerk(progress)])
+          .catch(() => undefined));
+        this.driverShape = shape;
         if (endsOnControl) {
           // Resting on a link opens its hover card (Wikipedia's page preview) over the passage: step just below the line.
           const below = inside({ x: to.x, y: Math.round(last.y + last.height + 14) });
