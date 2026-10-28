@@ -64,7 +64,7 @@ export function PublicLanding(){
 
    <section className="st-section" id="use-cases" aria-labelledby="uses-title">
     <Heading id="uses-title" title="What your agent can record for you."/>
-    <ul className="st-uses">{useCases.map(([title,body,prompt])=><li key={title}><b>{title}</b><span>{body}</span><q>{prompt}</q></li>)}</ul>
+    <dl className="st-uses">{useCases.map(([title,body,prompt])=><div key={title}><dt>{title}</dt><dd><span>{body}</span><q>{prompt}</q></dd></div>)}</dl>
    </section>
 
    <section className="st-section" id="how-it-works" aria-label="Connect your agent">

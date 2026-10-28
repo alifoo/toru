@@ -1158,8 +1158,9 @@ body { background:
 .st-github:hover { background:linear-gradient(160deg,#fffffff0 5%,#f1f7f9b0 45%,#dfe9efa8 100%); }
 .st-github svg { color:#3b4a55; }
 .st-uses { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:44px 0 0; padding:0; list-style:none; }
-.st-uses li { display:grid; align-content:start; gap:8px; padding:20px 22px; border-radius:13px; background:#fff; box-shadow:0 0 0 1px var(--st-line),0 1px 2px #2c46540d; }
-.st-uses b { font-size:16px; font-weight:500; letter-spacing:-.01em; color:var(--ink); }
+.st-uses > div { display:grid; align-content:start; gap:8px; padding:20px 22px; border-radius:13px; background:#fff; box-shadow:0 0 0 1px var(--st-line),0 1px 2px #2c46540d; }
+.st-uses dd { display:grid; gap:8px; margin:0; }
+.st-uses dt { font-size:16px; font-weight:500; letter-spacing:-.01em; color:var(--ink); }
 .st-uses span { font-size:14px; line-height:1.55; color:var(--st-body); }
 .st-uses q { margin-top:6px; padding:9px 12px; border-radius:9px; background:var(--st-window); font:12.5px/1.5 var(--mono); color:var(--st-body); quotes:"“" "”"; }
 @media (max-width:900px) { .st-uses { grid-template-columns:minmax(0,1fr); } }
