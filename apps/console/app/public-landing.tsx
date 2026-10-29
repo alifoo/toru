@@ -83,6 +83,13 @@ export function PublicLanding(){
     <div className="pricing-grid st-pricing">
      {plans.map(plan=><PlanCard key={plan.id} plan={plan} action={<a className="primary" href={plan.price===0?APP_URL:`${APP_URL}/pricing`} data-cta={`landing-plan-${plan.id}`}>{plan.price===0&&<span className="record-dot" aria-hidden="true"/>}{plan.price===0?'Start free':`Choose ${plan.name}`}</a>}/>)}
     </div>
+    <div className="st-plan-table">
+     <table>
+      <caption>The plans side by side</caption>
+      <thead><tr><th scope="col">Plan</th><th scope="col">Price per month (USD)</th><th scope="col">Credits per month</th><th scope="col">Longest capture</th><th scope="col">MP4 storage</th></tr></thead>
+      <tbody>{plans.map(plan=><tr key={plan.id}><th scope="row">{plan.name}</th><td>${plan.price}</td><td>{plan.credits} credits</td><td>{plan.minutes} minutes</td><td>{plan.days} days</td></tr>)}</tbody>
+     </table>
+    </div>
     <p className="st-note">A credit is used only when a video passes the check. <a href="/pricing">Compare the plans</a> or <a href="mailto:support@toru.tools?subject=Toru%20for%20my%20team">talk to us</a> about a team.</p>
    </section>
 
