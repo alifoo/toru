@@ -1756,6 +1756,11 @@ body { background:
 /* The site's nav on the pricing page, signed in or not. */
 .st-signin-button { padding:0; border:0; background:none; font:inherit; cursor:pointer; }
 .st-pricing { margin-top:40px; text-align:left; }
+.st-plan-table { margin-top:28px; overflow-x:auto; }
+.st-plan-table table { width:100%; min-width:560px; border-collapse:collapse; font-size:13px; text-align:left; }
+.st-plan-table caption { padding-bottom:8px; text-align:left; color:#64727d; }
+.st-plan-table th,.st-plan-table td { padding:8px 12px 8px 0; border-bottom:1px solid #dfe5ea; }
+.st-plan-table thead th { font-weight:500; color:#64727d; }
 
 /* Text pages (docs, Toru for Chrome and Mac, terms, privacy) and the sign-in screens in the Studio voice. */
 .lw-site .legal-page { width:min(720px,calc(100% - 40px)); margin:48px auto 0; padding:0 0 80px; }
