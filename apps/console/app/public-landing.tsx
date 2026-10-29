@@ -110,7 +110,7 @@ export function PublicLanding(){
 
    <section className="st-section st-faq" id="faq" aria-labelledby="faq-title">
     <h2 id="faq-title">Questions before you connect it.</h2>
-    <div>{landingFaqs.map((item,index)=><details key={item.question} open={index===0}><summary>{item.question}</summary><p>{item.answer}</p></details>)}</div>
+    <div>{landingFaqs.map(item=><details key={item.question} open><summary>{item.question}</summary><p>{item.answer}</p></details>)}</div>
    </section>
 
   </main><PublicFooter/><script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(schema).replace(/</g,'\\u003c')}}/>
