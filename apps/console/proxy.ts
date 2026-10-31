@@ -53,6 +53,41 @@ Works inside the agent you already use: Claude Code, Claude, Cursor, Codex and a
 
 Free includes 10 credits each month. Creator costs US$19 per month for 50 credits and Studio US$49 per month for 150. A credit is used only when a video passes the check. [Compare the plans](${SITE_URL}/pricing).
 
+## Every line of Toru is yours to read and run
+
+The recorder, Toru for Chrome, Toru for Mac and the console are public. Self-host it for free with no model key to bring, since your agent does the driving. The hosted plans fund the project and spare you the servers. [Self-host guide](${SITE_URL}/docs#self-host).
+
+- **Recorder**: the MCP server your agent talks to: capture, camera, render and the delivery check.
+- **Toru for Chrome**: the extension that records in your own signed-in Chrome.
+- **Toru for Mac**: the app that records, and lets your agent operate, a window on your Mac.
+- **Console**: demos, connections, brand and billing, the same one we host.
+
+## Questions before you connect it
+
+### Is Toru open source?
+
+Yes, under the MIT license. All of Toru is public on GitHub: the recorder, the Chrome extension, the Mac app and the console. Run it yourself, with no model key to bring, or let us run it for you.
+
+### Why pay if Toru is open source?
+
+You don't have to: self-hosting is free, forever. The hosted plans are for teams who would rather ship than operate a recorder: no servers, render workers or storage to run, links that work the moment a video is ready, updates the day they ship, and a person to answer when something breaks. Every paid plan also funds the open-source project.
+
+### How is this different from Loom or Screen Studio?
+
+Those tools record you doing the flow. With Toru, your agent does the flow from a prompt; Toru records it, adds the zooms, cursor and your brand, and checks the video before it reaches you. Toru is the infrastructure; your agent is the operator.
+
+### Does my agent get my passwords?
+
+No. It sees the product address and the plan. You are already signed in in your own Chrome or on your Mac, and a sign-in page stops the recording instead of being recorded.
+
+### What uses a credit?
+
+One delivered video that passed the check. A blank, frozen or too-short take is held back and costs nothing; downloads and technical retries do not use another credit.
+
+### Can it record a Mac app?
+
+Yes. Toru for Mac records the window you share and, when you allow it, operates that window for your agent. Same account, same credits.
+
 ## More
 
 - [Start free](${APP_URL})
