@@ -24,7 +24,13 @@ export default clerkMiddleware(async(_auth,request)=>{
  return response;
 });
 /** The homepage for agents that ask for Markdown, in the landing page's own words. */
-const HOME_MARKDOWN=`# Recording infrastructure for your agent.
+const HOME_MARKDOWN=`---
+title: "Your agent records your product demos · Toru"
+description: "Your AI agent records your product demos. Ask Claude Code, Claude, Cursor or Codex; it records in your own Chrome or on your Mac. 10 free demos a month."
+canonical: ${SITE_URL}
+---
+
+# Recording infrastructure for your agent.
 
 Your coding agent records your product demos itself: launch clips, changelog GIFs, help-center guides and bug repros. Toru is its camera, editor and brand kit, and checks every take.
 
