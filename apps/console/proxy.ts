@@ -10,7 +10,8 @@ export default clerkMiddleware(async(_auth,request)=>{
  if(host===APP_HOST&&['/docs','/companion','/legal','/llms.txt','/sitemap.xml'].includes(url.pathname))return NextResponse.redirect(new URL(url.pathname+url.search,SITE_URL),308);
  if(url.pathname==='/.well-known/mcp/server-card.json')return NextResponse.json(SERVER_CARD,{headers:{'Access-Control-Allow-Origin':'*'}});
  if(url.pathname==='/.well-known/ard.json')return NextResponse.json({entries:[ARD_ENTRY],mcpServers:[{name:SERVER_CARD.name,url:MCP_URL,transport:'streamable-http',serverCard:SITE_URL+'/.well-known/mcp/server-card.json'}]},{headers:{'Access-Control-Allow-Origin':'*'}});
- if(host!==APP_HOST&&url.pathname==='/index.md')return new NextResponse(HOME_MARKDOWN,{headers:{'Content-Type':'text/markdown; charset=utf-8'}});
+ if(host!==APP_HOST&&['/index.md','/index.html.md'].includes(url.pathname))return new NextResponse(HOME_MARKDOWN,{headers:{'Content-Type':'text/markdown; charset=utf-8'}});
+ if(host!==APP_HOST&&url.pathname.endsWith('.md')&&MIRRORED.includes(url.pathname.slice(0,-3)))return pageMarkdown(url.pathname.slice(0,-3),url.origin);
  if(url.pathname==='/pricing.md')return new NextResponse(PRICING_MARKDOWN,{headers:{'Content-Type':'text/markdown; charset=utf-8'}});
  if(request.headers.get('accept')?.includes('text/markdown')&&isMissingPage(url.pathname))return new NextResponse(
   `# Page not found\n\nThere is no page at \`${url.pathname}\` on Toru.\n\n- [Home](${SITE_URL}/)\n- [Docs](${SITE_URL}/docs)\n- [Sitemap](${SITE_URL}/sitemap.xml)\n- [llms.txt](${SITE_URL}/llms.txt)\n`,
@@ -128,6 +129,15 @@ const ARD_ENTRY={id:'urn:air:'+SITE_HOST+':mcp:toru',displayName:SERVER_CARD.tit
  'Record a bug repro video for this issue',
  'Record a walkthrough of my Mac app',
 ]};
+/** Pages listed in llms.txt whose Markdown copy is their own section of llms-full.txt. */
+const MIRRORED=['/docs','/chrome','/mac','/terms','/privacy'];
+async function pageMarkdown(path:string,origin:string){
+ const full=await fetch(new URL('/llms-full.txt',origin)).then(r=>r.ok?r.text():'');
+ const section=full.split(/^(?=# )/m).find(s=>s.split('\n')[0].endsWith(path+')'));
+ if(!section)return NextResponse.next();
+ const markdown=section.replace(/^# (.+) \(\S+\)\n/,(_,title:string)=>`---\ntitle: ${JSON.stringify(title)}\ncanonical: ${SITE_URL}${path}\n---\n\n# ${title}\n\n`);
+ return new NextResponse(markdown,{headers:{'Content-Type':'text/markdown; charset=utf-8'}});
+}
 /** Routes the app serves; files (a dot in the last segment), APIs and auth pages fall through to Next. */
 const PAGES=['/','/chrome','/companion','/docs','/legal','/mac','/mac/setup','/onboarding','/pricing','/privacy','/terms','/studio-preview','/studio-preview/landing','/studio-preview/onboarding'];
 function isMissingPage(pathname:string){
@@ -136,5 +146,5 @@ function isMissingPage(pathname:string){
 }
 export const config={matcher:[
  '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|mjs|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
- '/(api|trpc)(.*)','/__clerk/(.*)',
+ '/(api|trpc)(.*)','/__clerk/(.*)','/index.html.md',
 ]};
