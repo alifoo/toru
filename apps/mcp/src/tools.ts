@@ -3,6 +3,7 @@ import { preparationSave, preparationRead } from './preparation.js';
 import { z } from "zod";
 import { runSchema } from "./runs.js";
 import { viewportSchema } from "./viewport.js";
+import { privacySchema } from "./privacy.js";
 
 export const TOOL_NAMES = [
   "preparation_save", "preparation_read", "queue_enqueue", "queue_status", "queue_cancel", "account_usage", "navigation_start", "navigation_status", "navigation_guide", "navigation_stop", "browser_select",
@@ -30,7 +31,7 @@ export const TOOL_SCHEMAS: Record<ToolName, Record<string, z.ZodType>> = {
   session_connect: { requestId: id.optional(), url: z.string().url(), allowedOrigins: originList, loginEmail: z.string().trim().min(3).max(320).optional(), useDemoAccount: z.boolean().optional() },
   connection_status: { id, waitMs: z.number().int().min(0).max(25_000).optional() },
   session_import_status: { importId: id },
-  session_open: { localConnectionId:id.optional(), requestId: id.optional(), url: z.string().url(), allowedOrigins: originList, importId: id.optional(), viewport: viewportSchema.optional(), showEmails: z.boolean().optional().describe("Toru for Chrome only: true when the user asked to show the e-mail addresses on screen (their own product). Neither the page nor the render blurs them then. Leave it out otherwise.") },
+  session_open: { localConnectionId:id.optional(), requestId: id.optional(), url: z.string().url(), allowedOrigins: originList, importId: id.optional(), viewport: viewportSchema.optional(), showEmails: z.boolean().optional().describe("Toru for Chrome only: true when the user asked to show the e-mail addresses on screen (their own product). Neither the page nor the render blurs them then. Leave it out otherwise.") , privacy: privacySchema.optional() },
   session_close: { id },
   browser_observe: { id, mode: z.enum(["outline", "screenshot", "both"]).optional() },
   browser_navigate: { id, url: z.string().url() },

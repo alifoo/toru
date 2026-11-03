@@ -74,6 +74,11 @@ it('blocks clipboard, browser shortcuts and WebDriver key injection locally',()=
  for(const key of ['ENTER','TAB','SHIFT+TAB','CTRL+A','META+Z','ARROWDOWN'])expect(()=>assertLocalCommand({id:'x',method:'pressKey',args:[key]})).not.toThrow();
  expect(()=>assertLocalCommand({id:'x',method:'typeText',args:['\uE009v']})).toThrow();
  expect(()=>assertLocalCommand({id:'x',method:'formInput',args:['ref_1','\uE03Dv']})).toThrow();
+ // The page blur takes domains and texts only, never anything else the page could run.
+ expect(()=>assertLocalCommand({id:'x',method:'redactSensitiveText',args:[]})).not.toThrow();
+ expect(()=>assertLocalCommand({id:'x',method:'redactSensitiveText',args:[{keepEmailDomains:['usenock.com'],blurTexts:['Rafael Paduan']}]})).not.toThrow();
+ for(const options of [{script:'alert(1)'},{blurTexts:'Rafael'},{blurTexts:[1]},{keepEmailDomains:Array(21).fill('a.com')},null])
+  expect(()=>assertLocalCommand({id:'x',method:'redactSensitiveText',args:[options]})).toThrow('local_method_forbidden');
 });
 
 it('requires desktop consent and exposes capture without browser control or a false redaction claim',async()=>{

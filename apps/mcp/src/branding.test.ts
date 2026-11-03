@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -51,3 +51,25 @@ it('blurs odd-placed and tiny regions without changing the frame', async () => {
   expect(stdout.trim()).toBe('640,360');
   expect(await duration(out)).toBeCloseTo(2, 0);
 }, 60000);
+it('blurs many regions of a large capture with one thread per filter', async () => {
+  // 47 boxes on the 48-core render host started a slice thread per core in every scale filter, past the container's
+  // process limit, and ffmpeg could not configure the graph (render_failed on every long Chrome capture). A shim on
+  // PATH records what ffmpeg was asked for, then runs the real one.
+  const source = join(dir, 'large.mp4'), out = join(dir, 'large-redacted.mp4'), shim = join(dir, 'bin'), log = join(dir, 'ffmpeg-args.txt');
+  await exec('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=2560x1600:rate=5', '-t', '2', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', source]);
+  const real = (await exec('sh', ['-c', 'command -v ffmpeg'])).stdout.trim();
+  await exec('mkdir', ['-p', shim]);
+  await writeFile(join(shim, 'ffmpeg'), `#!/bin/sh\nprintf '%s\\n' "$@" > '${log}'\nexec '${real}' "$@"\n`);
+  await chmod(join(shim, 'ffmpeg'), 0o755);
+  const path = process.env.PATH;
+  process.env.PATH = `${shim}:${path}`;
+  try {
+    await redactRegions(source, out, Array.from({ length: 60 }, (_unused, index) => ({
+      x: (index % 6) * 0.16, y: Math.floor(index / 6) * 0.095, width: 0.1, height: 0.03, startMs: index * 20, endMs: 2000,
+    })));
+  } finally { process.env.PATH = path; }
+  const args = (await readFile(log, 'utf8')).split('\n');
+  expect(args[args.indexOf('-filter_complex_threads') + 1]).toBe('1');
+  const { stdout } = await exec('ffprobe', ['-v', 'error', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', out]);
+  expect(stdout.trim()).toBe('2560,1600');
+}, 120000);

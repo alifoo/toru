@@ -121,7 +121,11 @@ export async function redactRegions(sourcePath: string, outputPath: string, regi
     parts.push(`[c${index}]crop=${box.w}:${box.h}:${box.x}:${box.y},scale=${small}:flags=area,scale=${box.w}:${box.h}:flags=bicubic${radius >= 1 ? `,boxblur=${radius}:1` : ''}[b${index}]`);
     parts.push(`[s${index}][b${index}]overlay=${box.x}:${box.y}:enable='between(t,${box.from},${box.to})'[s${index + 1}]`);
   });
-  await run(['-i', sourcePath, '-filter_complex', parts.join(';'), '-map', `[s${boxes.length}]`, '-an',
+  // One thread per filter. Each scale filter otherwise starts a slice thread per core: 47 boxes on the 48-core
+  // render host asked for ~4,500 threads against the container's 1,000-process limit, and ffmpeg failed to configure
+  // the graph ("Failed to configure output pad on auto_scale_N ... Resource temporarily unavailable"), so every long
+  // capture that crossed a sign-in or an inbox never rendered. The boxes are tiny; the encoder keeps its own threads.
+  await run(['-i', sourcePath, '-filter_complex_threads', '1', '-filter_complex', parts.join(';'), '-map', `[s${boxes.length}]`, '-an',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '14', '-pix_fmt', 'yuv420p', outputPath], signal);
 }
 export async function makeGif(videoPath: string, gifPath: string, signal?: AbortSignal, width = 960): Promise<void> {

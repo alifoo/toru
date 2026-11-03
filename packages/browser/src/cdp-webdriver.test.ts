@@ -106,6 +106,60 @@ describe.skipIf(!available)("WebDriver driver over CDP", () => {
       close();
     }
   }, 120_000);
+
+  it("blurs addresses, the names beside them and listed texts on every document, cross-origin included, before the first paint", async () => {
+    // Another host is another origin: what a sign-in redirect to accounts.google.com or a link to mail.google.com does.
+    const pages = createServer((request, response) => {
+      response.writeHead(200, { "content-type": "text/html" });
+      if (request.url === "/start") return response.end("<!doctype html><title>Product</title><p id=start>Inbox of owner@usenock.com</p>");
+      response.end(`<!doctype html><title>Accounts</title><body style="font:16px system-ui">
+        <ul>
+          <li><div role="link" data-identifier="alice@gmail.com"><div id="alice-name">Alice Silva</div><div id="alice-email">alice@gmail.com</div></div></li>
+          <li><div role="link" data-identifier="owner@usenock.com"><div id="owner-name">Owner Name</div><div id="owner-email">owner@usenock.com</div></div></li>
+        </ul>
+        <table><tr><td><span id="bob" email="bob@corp.com" name="Bob">Bob Stone</span></td><td id="subject">Quick question about Nock</td></tr></table>
+        <h3><span id="carla-name">Carla Dias</span> <span id="carla-email">&lt;carla@example.org&gt;</span></h3>
+        <div><span id="lead">Rafael Paduan</span> <span id="status">respondeu</span></div>
+        <p id="quote">On Tuesday, after the meeting we had about the pilot and the pricing for the next quarter, Dora Lima wrote from dora@example.org that the team liked it and wanted to move ahead with the full rollout soon.</p>
+        <ul id="late"></ul>
+        <script>
+          // Runs while the page is still being parsed: nothing has been painted yet.
+          window.firstCheck = getComputedStyle(document.getElementById("alice-email")).filter;
+          setTimeout(() => {
+            document.getElementById("late").innerHTML = '<li><span id="dave-name">Dave Lima</span> <span id="dave-email">dave@example.net</span></li>';
+            // A frame callback runs before the frame that would show the new row is painted.
+            requestAnimationFrame(() => { window.lateCheck = getComputedStyle(document.getElementById("dave-email")).filter + "|" + getComputedStyle(document.getElementById("dave-name")).filter; });
+          }, 50);
+        </script>`);
+    });
+    await new Promise<void>((done) => pages.listen(0, "127.0.0.1", done));
+    const pagesPort = (pages.address() as { port: number }).port;
+    const start = `http://127.0.0.1:${pagesPort}/start`, other = `http://localhost:${pagesPort}/accounts`;
+    const { channel, close } = await pageChannel(port);
+    const transport = new CdpWebDriverTransport(channel, { debuggerAddress: `127.0.0.1:${port}` });
+    const browser = new WebDriverBrowserDriver(transport, { resolveHostname: async () => ["93.184.216.34"], recordingFrameRate: 30 });
+    const driver = await browser.createContext({ viewport: { width: 1280, height: 720 }, allowedOrigins: [start], sessionState: new TextEncoder().encode('{"cookies":[],"origins":[]}'),
+      allowDownload: false, allowPopup: false, onNavigation: () => undefined });
+    const filter = (id: string) => transport.request("POST", "/session/cdp/execute/sync", { script: `const e=document.getElementById(arguments[0]);return e?getComputedStyle(e).filter:'missing';`, args: [id] });
+    try {
+      await driver.goto(start);
+      await driver.redactSensitiveText({ keepEmailDomains: ["usenock.com"], blurTexts: ["rafael paduan"] });
+      expect(await filter("start")).toBe("none");
+      // Not through the driver: the page itself goes to another origin, as a redirect does.
+      await transport.request("POST", "/session/cdp/url", { url: other });
+      expect(await transport.request("POST", "/session/cdp/execute/sync", { script: "return window.firstCheck;", args: [] })).toContain("blur");
+      for (const id of ["alice-name", "alice-email", "bob", "carla-name", "carla-email", "lead"]) expect(await filter(id), id).toContain("blur");
+      for (const id of ["owner-name", "owner-email", "subject", "status", "quote"]) expect(await filter(id), id).toBe("none");
+      // The address inside a long paragraph is covered on its own; the paragraph stays readable.
+      expect(await transport.request("POST", "/session/cdp/execute/sync", { script: "return CSS.highlights.get('toru-redact').size;", args: [] })).toBeGreaterThan(0);
+      await new Promise((done) => setTimeout(done, 300));
+      expect(await transport.request("POST", "/session/cdp/execute/sync", { script: "return window.lateCheck;", args: [] })).toMatch(/blur.*\|.*blur/);
+    } finally {
+      await driver.dispose().catch(() => undefined);
+      close();
+      pages.close();
+    }
+  }, 60_000);
 });
 
 describe("CdpWebDriverTransport device scale", () => {
