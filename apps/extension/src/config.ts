@@ -50,4 +50,6 @@ export const CDP_COMMANDS = new Set([
   'Input.dispatchKeyEvent', 'Input.dispatchMouseEvent', 'Page.captureScreenshot', 'Page.enable', 'Page.getFrameTree',
   'Page.getLayoutMetrics', 'Page.navigate', 'Runtime.enable', 'Runtime.evaluate',
   'Page.startScreencast', 'Page.stopScreencast', 'Page.screencastFrameAck', 'Page.bringToFront',
+  // The privacy blur, installed on every document the recording opens (redactSensitiveText).
+  'Page.addScriptToEvaluateOnNewDocument', 'Page.removeScriptToEvaluateOnNewDocument',
 ]);

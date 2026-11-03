@@ -132,6 +132,18 @@ function channelFor(tabId: number): DebuggerChannel {
         pause(5_000).then(() => { throw new Error('screenshot_timeout'); })]);
       return await capturing;
     }
+    if (method === 'Page.captureScreenshot') {
+      // The navigator's observation. Bounded too: a page that stops painting (a window another one covers) held it, and
+      // every call behind it, until the server gave the command up 45 s later. Brought to the front, it paints again.
+      const once = () => Promise.race([worker('send', { tabId, method, params }),
+        pause(8_000).then(() => { throw new Error('screenshot_timeout'); })]);
+      try { return await once(); }
+      catch (error) {
+        if ((error as Error).message !== 'screenshot_timeout') throw error;
+        await worker('send', { tabId, method: 'Page.bringToFront', params: {} }).catch(() => undefined);
+        return await once();
+      }
+    }
     return worker('send', { tabId, method, params });
   };
   return {
@@ -178,7 +190,7 @@ async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?:
   // The tab renders the viewport at `scale` device pixels per CSS pixel (2560 device pixels wide at most) and the
   // screencast asks for that many: the same layout and coordinates, a sharper recording. The navigator's screenshots
   // stay 1280 wide, the viewport scaled down into them.
-  const cdp = new CdpWebDriverTransport(channel, { debuggerAddress: DEBUGGER_ADDRESS, deviceScaleFactor: scale, observationWidth: OBSERVATION_WIDTH, downscale: scalePng });
+  const cdp = new CdpWebDriverTransport(channel, { debuggerAddress: DEBUGGER_ADDRESS, deviceScaleFactor: scale, observationWidth: OBSERVATION_WIDTH, downscale: (png, width, height) => scalePng(png, width, height, scale) });
   const transport = {
     request: async (method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown) => {
       const value = await cdp.request(method, path, body);
@@ -240,8 +252,8 @@ async function run(command: Command): Promise<{ value?: unknown; error?: string;
       if (command.method === 'stopRecording' && value && typeof value === 'object' && 'body' in value) {
         const video = (value as { body: Uint8Array }).body;
         if (DEVELOPMENT) console.warn('capture', JSON.stringify({ ...lastCaptureStats(), size: active.encoder.captureSize, contentType: active.encoder.contentType, bytes: video.length }));
-        // Up to 256 MB (five minutes of 1440p scrolling at the encoder's target): the server allows 300 s for it.
-        await api(`result/${command.id}/video`, video, true, 330_000);
+        // Up to 512 MB (a 20-minute Studio take): the server allows 600 s for the request and 660 s for the stop.
+        await api(`result/${command.id}/video`, video, true, 600_000);
         value = { ...value, body: 'local_video_upload', contentType: active.encoder.contentType };
       }
     }

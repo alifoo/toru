@@ -702,8 +702,9 @@ it('hands the page blur the domains to keep and the texts to add, and refuses a 
     await recorder.initialize();
     await expect(recorder.call(owner, 'session_open', { url: 'https://app.example.com/', localConnectionId: randomUUID(),
       privacy: { keepEmailDomains: ['not a domain'] } })).rejects.toThrow();
+    // A client holding the tool list from before the option existed sends it as a JSON string.
     const id = String((await recorder.call(owner, 'session_open', { url: 'https://app.example.com/', localConnectionId: randomUUID(),
-      privacy: { keepEmailDomains: ['UseNock.com', 'usenock.com'], blurTexts: ['Rafael Paduan'] } })).structuredContent?.id);
+      privacy: JSON.stringify({ keepEmailDomains: ['UseNock.com', 'usenock.com'], blurTexts: ['Rafael Paduan'] }) })).structuredContent?.id);
     await recorder.call(owner, 'recording_start', { id });
     expect(driver.redactSensitiveText).toHaveBeenCalledWith({ keepEmailDomains: ['usenock.com'], blurTexts: ['Rafael Paduan'] });
     await recorder.call(owner, 'recording_stop', { id });
@@ -809,14 +810,15 @@ it('makes gestures with the driver, falls back to pointing on one without them, 
     await recorder.call(owner, 'recording_start', { id });
     await recorder.call(owner, 'browser_trace', { id, ref: 'ref_1', shape: 'circle' });
     await recorder.call(owner, 'browser_sweep', { id, ref: 'ref_1', rows: 3 });
-    expect(driver.gesture).toHaveBeenCalledWith('circle', { type: 'ref', ref: 'ref_1' }, undefined);
+    // Without options no third argument: over JSON an undefined one arrives as null.
+    expect(driver.gesture!.mock.calls.find(call => call[0] === 'circle')).toEqual(['circle', { type: 'ref', ref: 'ref_1' }]);
     expect(driver.gesture).toHaveBeenCalledWith('sweep', { type: 'ref', ref: 'ref_1' }, { rows: 3 });
     driver.gesture!.mockRejectedValueOnce(new Error('local_method_forbidden'));
     await recorder.call(owner, 'browser_point', { id, ref: 'ref_1' });
     expect(driver.pointer).toHaveBeenCalledWith('move', { type: 'ref', ref: 'ref_1' });
     // A number or a cell has no ref: a point on screen names it.
     await recorder.call(owner, 'browser_trace', { id, x: 640, y: 300, shape: 'underline' });
-    expect(driver.gesture).toHaveBeenCalledWith('underline', { type: 'coordinate', x: 640, y: 300 }, undefined);
+    expect(driver.gesture!.mock.calls.find(call => call[0] === 'underline')).toEqual(['underline', { type: 'coordinate', x: 640, y: 300 }]);
     await recorder.call(owner, 'browser_highlight', { id, ref: 'ref_1', text: 'founded in 2013' });
     expect(driver.gesture).toHaveBeenCalledWith('highlight', { type: 'ref', ref: 'ref_1' }, { text: 'founded in 2013' });
     await recorder.call(owner, 'browser_read', { id, amount: 900 });

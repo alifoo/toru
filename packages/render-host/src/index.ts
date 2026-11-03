@@ -74,7 +74,7 @@ function startHostServer(
       let bytes = 0;
       request.on("data", (chunk: Buffer) => {
         bytes += chunk.length;
-        if (bytes > 256 * 1024 * 1024) { request.destroy(); return; }
+        if (bytes > 512 * 1024 * 1024) { request.destroy(); return; }
         chunks.push(chunk);
       });
       request.on("end", () => {

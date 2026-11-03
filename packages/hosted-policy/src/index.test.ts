@@ -322,7 +322,7 @@ it('grants Studio limits and keeps invoice replay and refunds scoped to its poli
   const end=now+30*86400000;
   const payment={intentId:'pi_studio12345678',chargeId:'ch_studio12345678',amount:4900,currency:'usd'};
   ledger.grantCreatorCycle('owner','sub_studio12345678','in_studio12345678',now,end,now,payment,'studio-v1');
-  expect(ledger.usage('owner',now)).toMatchObject({available:150,policy:{version:'studio-v1',videos:150,captureMs:300000}});
+  expect(ledger.usage('owner',now)).toMatchObject({available:150,policy:{version:'studio-v1',videos:150,captureMs:1_200_000,sessionMs:2_400_000}});
   ledger.reserve('owner','studio-job','studio-request',hash,now);
   expect(ledger.policyForReservation('studio-job').version).toBe('studio-v1');
   expect(()=>ledger.grantCreatorCycle('owner','sub_studio12345678','in_studio12345678',now,end,now,payment,'creator-v1')).toThrow('creator_invoice_conflict');

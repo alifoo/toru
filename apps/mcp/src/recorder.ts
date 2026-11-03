@@ -32,6 +32,7 @@ import { BrandStore, type Brand } from './store/brands.js';
 import type { DesktopWindow } from './desktop-window.js';
 import { applyBrand, brandWallpaper, makeGif, redactRegions } from './branding.js';
 import { privacyOf } from './privacy.js';
+import { MAX_CAPTURE_MS } from './local-protocol.js';
 import { renderTimeline } from './studio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
@@ -97,8 +98,23 @@ type Active = {
 const limits = {
   session: 20 * 60_000, idle: 3 * 60_000, recording: 5 * 60_000,
   render: 10 * 60_000, retention: 24 * 60 * 60_000,
-  storage: 2 * 1024 ** 3, artifact: 256 * 1024 ** 2, imports: 100,
+  storage: 3.5 * 1024 ** 3, artifact: 512 * 1024 ** 2, imports: 100,
 };
+/**
+ * How long a render may take: ten minutes, or twice the capture for a long one (a 20-minute Studio take gets 40).
+ * The renderer's own timeout (index.ts, render-worker.ts) is the hour; this deadline is the one that applies.
+ */
+export function renderDeadlineMs(captureMs: number | undefined): number {
+  return Math.min(60 * 60_000, Math.max(limits.render, 2 * (Number.isFinite(captureMs) ? captureMs ?? 0 : 0)));
+}
+/**
+ * The render's target bitrate: the exporter's 8 Mbps, lowered for a capture long enough that the video could pass
+ * 450 MB at it (anything over 7.5 minutes), so a long Studio take still fits the artifact limit.
+ */
+export function renderBitrate(captureMs: number | undefined): number {
+  const seconds = Math.max(1, (Number.isFinite(captureMs) ? captureMs ?? 0 : 0) / 1000);
+  return Math.min(8_000_000, Math.round(450 * 1024 ** 2 * 8 / seconds / 100_000) * 100_000);
+}
 const uuid = z.uuid();
 /** The space every pointer, zoom and redaction coordinate of a capture is in: its viewport, in CSS pixels. */
 function observationViewport(driver: Pick<Driver, 'captureViewport'>) {
@@ -648,7 +664,9 @@ export class Recorder {
           // A driver without gestures (Toru for Chrome before them, a Mac window) still points the cursor at the element.
           try {
             if (!driver.gesture) throw new Error('local_method_forbidden');
-            await driver.gesture(kind, target, options);
+            // No third argument without options: JSON sends an undefined one as null, which Toru for Chrome up to
+            // 0.1.12 refuses, and a highlight without text fell back to a plain cursor move.
+            await (options ? driver.gesture(kind, target, options) : driver.gesture(kind, target));
           } catch (error) {
             if (!['local_method_forbidden', 'desktop_capture_only'].includes((error as Error).message)) throw error;
             await driver.pointer('move', target);
@@ -910,7 +928,7 @@ export class Recorder {
       ...(['captured', 'rendering', 'completed'].includes(job.status) ? { rawPreserved: rawAvailable,...(job.rawExpiresAt!==undefined?{rawExpiresAt:new Date(job.rawExpiresAt).toISOString()}:{}) } : {}),
       ...(rendering ? {
         renderStartedAt: new Date(rendering.startedAt).toISOString(),
-        renderDeadlineAt: new Date(rendering.startedAt + limits.render).toISOString(),
+        renderDeadlineAt: new Date(rendering.startedAt + renderDeadlineMs(job.durationMs)).toISOString(),
         elapsedMs: Date.now() - rendering.startedAt,
         ...(progress ? { progress: { ...progress, percent: Math.min(100, Math.round(progress.currentFrame / progress.totalFrames * 100)), updatedAt: new Date(rendering.progressedAt!).toISOString() } } : {}),
         nextCall: { name: 'recording_status', arguments: { id: job.id } },
@@ -1250,7 +1268,7 @@ export class Recorder {
           const raw = await active.driver.stopRecording();
           const capturedDuration = active.driver.recordingDurationMs;
           if (active.driver.desktopWindow) active.job.desktopWindow = active.driver.desktopWindow;
-          if (typeof capturedDuration === 'number' && Number.isFinite(capturedDuration) && capturedDuration > 0 && capturedDuration <= 305000) {
+          if (typeof capturedDuration === 'number' && Number.isFinite(capturedDuration) && capturedDuration > 0 && capturedDuration <= MAX_CAPTURE_MS) {
             active.job.durationMs = capturedDuration;
           }
           if (!raw.redactionPassed && active.driver.capturePrivacy!=='user-approved-desktop') throw new Error('capture_redaction_failed');
@@ -1358,6 +1376,7 @@ export class Recorder {
       const config = buildExporterConfig(observation, {
         wallpaper,
         padding,
+        bitrate: renderBitrate(observation.durationMs),
         ...(padding === 0 ? { borderRadius: 0, showShadow: false } : brand?.radius !== undefined ? { borderRadius: brand.radius } : {}),
         ...(outputWidth ? { width: outputWidth, height: Math.round(outputWidth * observation.height / observation.width / 2) * 2 } : {}),
         cursorScale: presentation.cursorScale,
@@ -1367,7 +1386,7 @@ export class Recorder {
         ...(brand?.zoom?.enabled === false ? { zoom: false } : brand?.zoom?.scale !== undefined ? { zoomScale: brand.zoom.scale } : {}),
         ...(brand?.cursor?.smooth === false ? { smoothCursor: false } : {}),
       });
-      const reservation = await this.reserve(job.owner, 'renderMs', limits.render,job.id);
+      const reservation = await this.reserve(job.owner, 'renderMs', renderDeadlineMs(job.durationMs),job.id);
       try {
         job.status = 'rendering'; job.renderRequestId=requestId; delete job.errorCode;
         await this.save(job,()=>{
@@ -1380,7 +1399,7 @@ export class Recorder {
         throw error;
       }
       const controller = new AbortController(); const startedAt = Date.now();
-      const timer = setTimeout(() => controller.abort(new Error('render_timeout')), limits.render); timer.unref();
+      const timer = setTimeout(() => controller.abort(new Error('render_timeout')), renderDeadlineMs(job.durationMs)); timer.unref();
       const done = (async () => {
         const previousArtifact=job.artifact;
         let publication:Job['artifact'];

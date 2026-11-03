@@ -74,6 +74,9 @@ it('blocks clipboard, browser shortcuts and WebDriver key injection locally',()=
  for(const key of ['ENTER','TAB','SHIFT+TAB','CTRL+A','META+Z','ARROWDOWN'])expect(()=>assertLocalCommand({id:'x',method:'pressKey',args:[key]})).not.toThrow();
  expect(()=>assertLocalCommand({id:'x',method:'typeText',args:['\uE009v']})).toThrow();
  expect(()=>assertLocalCommand({id:'x',method:'formInput',args:['ref_1','\uE03Dv']})).toThrow();
+ // An absent gesture option arrives as null over JSON (a highlight without text).
+ expect(()=>assertLocalCommand({id:'x',method:'gesture',args:['highlight',{type:'ref',ref:'ref_1'},null]})).not.toThrow();
+ expect(()=>assertLocalCommand({id:'x',method:'gesture',args:['highlight',{type:'ref',ref:'ref_1'},{script:'x'}]})).toThrow('local_method_forbidden');
  // The page blur takes domains and texts only, never anything else the page could run.
  expect(()=>assertLocalCommand({id:'x',method:'redactSensitiveText',args:[]})).not.toThrow();
  expect(()=>assertLocalCommand({id:'x',method:'redactSensitiveText',args:[{keepEmailDomains:['usenock.com'],blurTexts:['Rafael Paduan']}]})).not.toThrow();

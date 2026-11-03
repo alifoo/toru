@@ -1,8 +1,8 @@
 {
   "channel": "beta",
-  "version": "0.1.12",
-  "bytes": 336896,
-  "sha256": "ae5800f44b75f126a624e5707d4612dbb6e5734ea39beb4baccea38d625ad283",
-  "publishedAt": "2026-11-03T06:48:05.995Z",
+  "version": "0.1.13",
+  "bytes": 337543,
+  "sha256": "f4e52835d74de46b08a5bf2392a6aade07ad2030fc94d858f68b8b961e3662d2",
+  "publishedAt": "2026-11-03T07:35:27.960Z",
   "webStoreUrl": "https://chromewebstore.google.com/detail/toru-for-chrome/ibaoopjpebimjmmmldganhkjmkibdnec"
 }

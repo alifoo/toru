@@ -7,7 +7,14 @@ export interface TransactionalStore {
 }
 export const freePolicy=Object.freeze({version:'free-v1',videos:10,captureMs:120_000,sessionMs:600_000,rerenders:2,rawRetentionMs:86_400_000,videoRetentionMs:7*86_400_000});
 export const creatorPolicy=Object.freeze({version:'creator-v1',videos:50,captureMs:300_000,sessionMs:1_200_000,rerenders:2,rawRetentionMs:86_400_000,videoRetentionMs:30*86_400_000});
-export const studioPolicy=Object.freeze({...creatorPolicy,version:'studio-v1',videos:150});
+/**
+ * Studio records for twenty minutes in one take, inside a forty-minute session: the most the capture path holds safely
+ * today. Toru for Chrome encodes the whole take in memory and uploads it in one request of at most 512 MB
+ * (MAX_LOCAL_VIDEO): a screen recording averages ~0.7 Mbps (20 min ≈ 105 MB) and even nonstop scrolling at the
+ * encoder's 6 Mbps target stays under it for about eleven minutes. The render gets twice the capture (renderDeadlineMs)
+ * and a bitrate that keeps the video under 450 MB (renderBitrate). Longer takes need a streamed upload first.
+ */
+export const studioPolicy=Object.freeze({...creatorPolicy,version:'studio-v1',videos:150,captureMs:1_200_000,sessionMs:2_400_000});
 export function paidPolicy(version:unknown){ if(version==='studio-v1')return studioPolicy;if(version==='creator-v1')return creatorPolicy;throw new Error('paid_policy_invalid'); }
 export type CreditReservation={jobId:string;owner:string;requestId:string;state:'reserved'|'committed'|'released';bucketId:string;artifactId:string|null};
 export type CreatorPayment={intentId:string;chargeId:string;amount:number;currency:string};
