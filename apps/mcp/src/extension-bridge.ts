@@ -7,7 +7,7 @@ import type {Driver} from './recorder.js';
 import {sameProductSite} from './product-origin.js';
 import {withRecorderStore} from './store/open.js';
 import {ExtensionDeviceStore} from './store/extension-devices.js';
-import {decodeLocal,LOCAL_METHODS,MAX_LOCAL_JSON,MAX_LOCAL_VIDEO,type LocalMethod} from './local-protocol.js';
+import {decodeLocal,LOCAL_METHODS,MAX_CAPTURE_MS,MAX_LOCAL_JSON,MAX_LOCAL_VIDEO,type LocalMethod} from './local-protocol.js';
 
 /** What the extension may be asked to do: the companion's page methods, plus opening the product tab. Never desktop sources. */
 export const EXTENSION_METHODS=['open',...LOCAL_METHODS.filter(method=>method!=='listSources'&&method!=='selectSource')] as const;
@@ -106,7 +106,7 @@ export class ExtensionBridge {
    if(pendingMark){const previous=pendingMark;pendingMark=undefined;await previous;}
    const result=await this.command(d,method,args) as {value?:unknown;meta?:Record<string,unknown>};
    const incoming=result.meta??{};
-   if(method==='stopRecording'&&typeof incoming.recordingElapsedMs==='number'&&Number.isFinite(incoming.recordingElapsedMs)&&incoming.recordingElapsedMs>0&&incoming.recordingElapsedMs<=305000)meta.recordingDurationMs=incoming.recordingElapsedMs;
+   if(method==='stopRecording'&&typeof incoming.recordingElapsedMs==='number'&&Number.isFinite(incoming.recordingElapsedMs)&&incoming.recordingElapsedMs>0&&incoming.recordingElapsedMs<=MAX_CAPTURE_MS)meta.recordingDurationMs=incoming.recordingElapsedMs;
    for(const key of ['recordingMode','recordingElapsedMs','pointerTrail','pointerTelemetry','semanticTimeline','identitySightings'])if(Object.hasOwn(incoming,key))meta[key]=incoming[key];
    const viewport=incoming.captureViewport as {width?:unknown;height?:unknown}|undefined;
    if(viewport&&Number.isInteger(viewport.width)&&Number.isInteger(viewport.height)&&Number(viewport.width)>=640&&Number(viewport.width)<=3840&&Number(viewport.height)>=360&&Number(viewport.height)<=2160)meta.captureViewport=viewport;
@@ -153,7 +153,7 @@ export class ExtensionBridge {
   if(d.lastSeen<=Date.now()-onlineWindowMs)return Promise.reject(new Error('extension_offline'));
   if(d.pending)return Promise.reject(new Error('local_browser_action_in_progress'));
   return new Promise((resolve,reject)=>{
-   const timer=setTimeout(()=>this.release(d,'local_browser_disconnected'),method==='stopRecording'?180_000:method==='open'?60_000:45_000).unref();
+   const timer=setTimeout(()=>this.release(d,'local_browser_disconnected'),method==='stopRecording'?660_000:method==='open'?60_000:45_000).unref();
    d.pending={command:{id:randomUUID(),method,args},sent:false,resolve,reject,timer};d.wake?.();
   });
  }

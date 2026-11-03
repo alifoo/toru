@@ -58,7 +58,7 @@ async function localRuntime():Promise<RecorderRuntime>{
   createContext:options=>browser.createContext(options),
   render:async(sourcePath,config,signal,onProgress)=>{
    const outcome=await renderHost.render({sourcePath,
-    config:gpuRendering?{...config,renderBackend:'gpu'}:config,signal,onProgress,timeoutMs:10*60_000});
+    config:gpuRendering?{...config,renderBackend:'gpu'}:config,signal,onProgress,timeoutMs:60*60_000});
    // The message stays a fixed code for status classification; the host's reason travels as the cause for the service log.
    if(outcome.status!=='rendered')throw new Error(['render_timeout','render_canceled'].includes(outcome.reason)?outcome.reason:'render_failed',{cause:outcome.reason});
    return outcome.bytes;
@@ -149,7 +149,7 @@ export async function startRecorder(overrides:RecorderOverrides={}){
   server=createMcpServer({hostedBrowser:process.env.HOSTED_BROWSER_ENABLED==='1',...(localBrowser?{localBrowser}:{}),...(extension?{extension}:{}),recorder:api,dataDir,publicUrl,...(overrides.oauth?{oauth:overrides.oauth}:{}),...(adminKey?{adminKey}:{}),...(overrides.httpExtension?{httpExtension:overrides.httpExtension}:{}),downloadSecret:key.toString('base64url')});
   // A Toru for Chrome recording uploads in one request: up to 256 MB (five minutes at 1440p), so 6 Mbps of upload
   // finishes in time. Headers still have 10 s and an idle socket 30 s.
-  server.requestTimeout=300_000;
+  server.requestTimeout=600_000;
   server.headersTimeout=10_000;
   await new Promise<void>((done,fail)=>{
    const onError=(error:Error)=>fail(error);

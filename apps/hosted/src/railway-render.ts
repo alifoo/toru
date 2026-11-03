@@ -15,7 +15,7 @@ type RenderOptions={
  /** The service's own render bundle, where catalog wallpapers are read from. Defaults to RENDER_BUNDLE_DIRECTORY. */
  bundleDirectory?:string;
 };
-const maximumMediaBytes=256*1024*1024;
+const maximumMediaBytes=512*1024*1024;
 
 /**
  * The worker image carries its own copy of the render bundle, pinned at provisioning time, so a wallpaper added to the
@@ -79,7 +79,7 @@ export function createRailwayRenderer(options:RenderOptions):RecorderRuntime['re
     '--shm-size 256m --tmpfs /tmp:rw,size=1g,mode=1777 --env HOME=/tmp '+
     `--mount type=bind,src=${directory},dst=/media --entrypoint node ${options.image} `+
     '/app/apps/hosted/dist/render-worker.js /media/raw.webm /media/config.json /media/video.mp4';
-   executionHandle=sandbox.exec(command,{timeoutSec:11*60});
+   executionHandle=sandbox.exec(command,{timeoutSec:61*60});
    const execution=await executionHandle;
    signal.throwIfAborted();
    if(execution.timedOut)throw new Error('render_timeout');

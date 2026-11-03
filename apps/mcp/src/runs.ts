@@ -60,7 +60,7 @@ type Run = Checkpoint & { id: string; owner: string; requestId: string; inputHas
 type Call = (owner: string, name: string, args: unknown, authorize?: AuthorizationCheck) => Promise<CallToolResult>;
 export type RunStore = { artifactDir(owner: string, sessionId: string): Promise<string> };
 const reply = (data: Record<string, unknown>): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data });
-const TTL = 24 * 60 * 60_000, RUN_TIMEOUT = 30 * 60_000;
+const TTL = 24 * 60 * 60_000, RUN_TIMEOUT = 2 * 60 * 60_000;
 /** The recorder serves one session or render at a time. A run that finds it busy waits its turn (up to BUSY_WAIT) instead of failing. */
 const BUSY_WAIT = 10 * 60_000, BUSY_RETRY_TOOLS = new Set(['session_open', 'recording_render']);
 /** Runs stay listable in the dashboard as long as the longest video retention; live state (idempotency, polling) only needs a day. */

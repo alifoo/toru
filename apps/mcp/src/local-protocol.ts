@@ -2,7 +2,9 @@ export const LOCAL_METHODS = ['goto','currentUrl','readPage','pageText','screens
 export type LocalMethod=typeof LOCAL_METHODS[number];
 export type LocalCommand={id:string;method:LocalMethod;args:unknown[]};
 export const MAX_LOCAL_JSON=12*1024*1024;
-export const MAX_LOCAL_VIDEO=256*1024*1024;
+export const MAX_LOCAL_VIDEO=512*1024*1024;
+/** The longest capture a device may report (Studio's 20 minutes, plus the stop), in milliseconds. */
+export const MAX_CAPTURE_MS=1_205_000;
 export function encodeLocal(value:unknown):unknown {
   if(value instanceof Uint8Array)return {$bytes:Buffer.from(value).toString('base64')};
   if(Array.isArray(value))return value.map(encodeLocal);
@@ -29,8 +31,9 @@ export function assertLocalCommand(command:LocalCommand):void {
   if(command.method==='gesture'){
     const [kind,,options]=command.args;
     if(!['point','circle','underline','sweep','highlight'].includes(String(kind)))throw new Error('local_method_forbidden');
-    if(options!==undefined&&(typeof options!=='object'||options===null||Object.keys(options).some(key=>key!=='rows'&&key!=='text')))throw new Error('local_method_forbidden');
-    const text=(options as {text?:unknown}|undefined)?.text;
+    // JSON carries an absent options argument as null.
+    if(options!==undefined&&options!==null&&(typeof options!=='object'||Object.keys(options).some(key=>key!=='rows'&&key!=='text')))throw new Error('local_method_forbidden');
+    const text=(options as {text?:unknown}|null|undefined)?.text;
     if(text!==undefined&&(typeof text!=='string'||text.length>300))throw new Error('local_method_forbidden');
   }
   if(command.method==='redactSensitiveText'){

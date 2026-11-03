@@ -7,14 +7,14 @@ export async function renderWorker(sourcePath:string,configPath:string,outputPat
  const config=JSON.parse(await readFile(configPath,'utf8')) as Record<string,unknown>;
  const outcome=await createRenderHost({browserBinary:process.env.RENDER_BROWSER_BINARY??'/usr/bin/chromium',
   bundleDirectory:process.env.RENDER_BUNDLE_DIRECTORY??'/app/apps/render-worker/dist-web'}).render({
-   sourcePath,config,timeoutMs:10*60_000,
+   sourcePath,config,timeoutMs:60*60_000,
   });
  if(outcome.status!=='rendered'){
   // The page's own reason goes to stderr, which the service logs as the failure's cause; no media or page text in it.
   if(!['render_timeout','render_canceled'].includes(outcome.reason))console.error(`render_failed: ${String(outcome.reason).replace(/\s+/g,' ').slice(0,300)}`);
   throw new Error(['render_timeout','render_canceled'].includes(outcome.reason)?outcome.reason:'render_failed');
  }
- if(!outcome.bytes.length||outcome.bytes.length>256*1024*1024)throw new Error('render_size_invalid');
+ if(!outcome.bytes.length||outcome.bytes.length>512*1024*1024)throw new Error('render_size_invalid');
  await writeFile(outputPath,outcome.bytes,{mode:0o600});
 }
 

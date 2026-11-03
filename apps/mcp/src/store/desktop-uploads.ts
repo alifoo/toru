@@ -4,6 +4,7 @@ import {mkdir,open,rename,stat,statfs} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {z} from 'zod';
 import type {RecorderDatabase} from './database.js';
+import {MAX_CAPTURE_MS} from '../local-protocol.js';
 
 export const desktopChunkBytes=4*1024*1024;
 const maxBytes=256*1024*1024;
@@ -11,14 +12,14 @@ const fraction=z.number().finite().min(-0.01).max(1.01);
 /** Where the shared window and its menus were inside the recorded region, over time (fractions of it). */
 export const desktopLayersSchema=z.object({
  samples:z.array(z.object({
-  atMs:z.number().int().min(0).max(305000),
+  atMs:z.number().int().min(0).max(MAX_CAPTURE_MS),
   rects:z.array(z.object({x:fraction,y:fraction,width:fraction,height:fraction,radius:z.number().finite().min(0).max(0.2),kind:z.enum(['window','popup'])}).strict()).max(16),
  }).strict()).max(2000),
 }).strict();
 export const desktopMediaSchema=z.object({
  width:z.number().int().positive().max(3840),
  height:z.number().int().positive().max(2160),
- durationMs:z.number().int().positive().max(305000),
+ durationMs:z.number().int().positive().max(MAX_CAPTURE_MS),
  layers:desktopLayersSchema.optional(),
 }).strict();
 export type DesktopMedia=z.infer<typeof desktopMediaSchema>;

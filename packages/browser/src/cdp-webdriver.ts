@@ -109,7 +109,7 @@ export class CdpWebDriverTransport implements WebDriverTransport {
        * itself (a clip with a scale), which re-renders the tab at that scale for a moment: a live screencast streams
        * that shrunk frame, and on a page that does not repaint it stays in the recording until the next change.
        */
-      downscale?: (png: string, width: number, height: number) => Promise<string>;
+      downscale?: (png: string, width: number, height: number) => Promise<string | null>;
     } = {},
   ) {
     const scale = options.deviceScaleFactor ?? 1;
@@ -219,7 +219,9 @@ export class CdpWebDriverTransport implements WebDriverTransport {
     if (this.scale === 1 && observed === 1) return (await this.channel.send("Page.captureScreenshot", { format: "png" }) as { data: string }).data;
     if (this.options.downscale) {
       const rendered = (await this.channel.send("Page.captureScreenshot", { format: "png" }) as { data: string }).data;
-      return this.options.downscale(rendered, Math.round(this.viewport.width * observed), Math.round(this.viewport.height * observed));
+      const scaled = await this.options.downscale(rendered, Math.round(this.viewport.width * observed), Math.round(this.viewport.height * observed));
+      // Null: the capture was not the tab as it renders (painted at the wrong scale). Chrome's scaled capture paints anew.
+      if (scaled !== null) return scaled;
     }
     // At a higher device scale Chrome captures device pixels. The navigator reads its observation at one pixel per CSS
     // pixel of the viewport, or narrower when the viewport is wider than observationWidth, so the picture is a clip in

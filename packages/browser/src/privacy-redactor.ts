@@ -148,8 +148,12 @@ export function privacyRedactorScript(options?: PrivacyOptions): string {
           for (var at = lower.indexOf(needle); at >= 0; at = lower.indexOf(needle, at + needle.length)) spans.push([at, at + needle.length]);
         }
       }
+      // The parent's whole text only for a candidate: read for every text node, a big container's text made a full
+      // pass quadratic on a large page.
+      var telephone = text.length <= 200 && TELEPHONE.test(text);
+      if (!spans.length && !telephone) return;
       var whole = parent.textContent || '';
-      var telephone = whole.length <= 200 && TELEPHONE.test(text);
+      if (telephone && whole.length > 200) telephone = false;
       if (!spans.length && !telephone) return;
       if (whole.length <= SHORT || telephone) blur(parent);
       else for (var s = 0; s < spans.length; s++) cover(node, spans[s][0], spans[s][1]);

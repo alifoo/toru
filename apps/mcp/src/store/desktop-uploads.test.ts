@@ -57,7 +57,7 @@ it('rejects changed manifests, incomplete content and checksum failures',async()
 });
 it('keeps finalized media metadata immutable through retries and rejects invalid manifests',async()=>{
  const f=await fixture(),args=[f.owner,f.deviceId,f.id] as const;
- for(const invalid of [undefined,{...media,width:0},{...media,height:2161},{...media,width:1.5},{...media,durationMs:0},{...media,durationMs:305001},{...media,durationMs:Infinity}]){
+ for(const invalid of [undefined,{...media,width:0},{...media,height:2161},{...media,width:1.5},{...media,durationMs:0},{...media,durationMs:1_205_001},{...media,durationMs:Infinity}]){
   await expect(f.store().begin(...args,f.bytes.length,f.hash,invalid)).rejects.toThrow();
  }
  expect(f.db.connection.prepare('SELECT count(*) n FROM desktop_uploads').get()?.n).toBe(0);

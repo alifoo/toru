@@ -9,7 +9,7 @@ import type {IncomingMessage,ServerResponse} from 'node:http';
 import type {BrowserContextOptions} from '@content-layer/browser';
 import type {Driver} from './recorder.js';
 import {sameProductSite} from './product-origin.js';
-import {decodeLocal,LOCAL_METHODS,MAX_LOCAL_JSON,MAX_LOCAL_VIDEO,type LocalCommand,type LocalMethod} from './local-protocol.js';
+import {decodeLocal,LOCAL_METHODS,MAX_CAPTURE_MS,MAX_LOCAL_JSON,MAX_LOCAL_VIDEO,type LocalCommand,type LocalMethod} from './local-protocol.js';
 import {DEFAULT_WINDOW_SIZE,desktopWindow,type WindowSizePreset} from './desktop-window.js';
 
 type Pending={command:LocalCommand;sent:boolean;resolve(value:unknown):void;reject(error:Error):void;timer:NodeJS.Timeout;video?:Buffer};
@@ -106,7 +106,7 @@ export class LocalBrowserBridge {
    // A Mac before 0.4.2 reads only captureId and records the window as it is.
    const result=await this.command(d,method,d.mode==='desktop'&&method==='startRecording'&&options.captureId?[{captureId:options.captureId,...(d.windowSize?{windowSize:d.windowSize}:{})}]:args) as {value?:unknown;meta?:Record<string,unknown>};
    const incoming=result.meta??{};
-   if(method==='stopRecording' && typeof incoming.recordingElapsedMs==='number' && Number.isFinite(incoming.recordingElapsedMs) && incoming.recordingElapsedMs>0 && incoming.recordingElapsedMs<=305000)meta.recordingDurationMs=incoming.recordingElapsedMs;
+   if(method==='stopRecording' && typeof incoming.recordingElapsedMs==='number' && Number.isFinite(incoming.recordingElapsedMs) && incoming.recordingElapsedMs>0 && incoming.recordingElapsedMs<=MAX_CAPTURE_MS)meta.recordingDurationMs=incoming.recordingElapsedMs;
    for(const key of ['recordingMode','recordingElapsedMs','pointerTrail','pointerTelemetry','semanticTimeline','identitySightings','contentLayers'])if(Object.hasOwn(incoming,key))meta[key]=incoming[key];
    if(d.mode==='desktop'){const window=desktopWindow(incoming.desktopWindow);if(window)meta.desktopWindow=window;}
    const viewport=incoming.captureViewport as {width?:unknown;height?:unknown}|undefined;
