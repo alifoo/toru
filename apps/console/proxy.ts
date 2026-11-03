@@ -17,10 +17,15 @@ export default clerkMiddleware(async(_auth,request)=>{
   `# Page not found\n\nThere is no page at \`${url.pathname}\` on Toru.\n\n- [Home](${SITE_URL}/)\n- [Docs](${SITE_URL}/docs)\n- [Sitemap](${SITE_URL}/sitemap.xml)\n- [llms.txt](${SITE_URL}/llms.txt)\n`,
   {status:404,headers:{'Content-Type':'text/markdown; charset=utf-8'}});
  const home=host!==APP_HOST&&url.pathname==='/';
- if(home&&request.headers.get('accept')?.includes('text/markdown'))return new NextResponse(HOME_MARKDOWN,{headers:{'Content-Type':'text/markdown; charset=utf-8','Vary':'Accept'}});
+ const wantsMarkdown=request.headers.get('accept')?.includes('text/markdown');
+ if(home&&wantsMarkdown)return new NextResponse(HOME_MARKDOWN,{headers:{'Content-Type':'text/markdown; charset=utf-8','Vary':'Accept'}});
+ const path=url.pathname.replace(/(.)\/+$/,'$1');
+ const negotiated=home||(host!==APP_HOST&&(path==='/pricing'||MIRRORED.includes(path)));
+ if(negotiated&&wantsMarkdown&&path==='/pricing')return new NextResponse(PRICING_MARKDOWN,{headers:{'Content-Type':'text/markdown; charset=utf-8','Vary':'Accept'}});
+ if(negotiated&&wantsMarkdown&&!home)return pageMarkdown(path,url.origin);
  const response=NextResponse.next();
  if(host===APP_HOST)response.headers.set('X-Robots-Tag','noindex, nofollow');
- if(home)response.headers.set('Vary',[response.headers.get('Vary'),'Accept'].filter(Boolean).join(', '));
+ if(negotiated)response.headers.set('Vary',[response.headers.get('Vary'),'Accept'].filter(Boolean).join(', '));
  if(home)response.headers.set('Link','</sitemap.xml>; rel="sitemap", </llms.txt>; rel="describedby", </index.md>; rel="alternate"; type="text/markdown"');
  return response;
 });
@@ -134,9 +139,9 @@ const MIRRORED=['/docs','/chrome','/mac','/terms','/privacy'];
 async function pageMarkdown(path:string,origin:string){
  const full=await fetch(new URL('/llms-full.txt',origin)).then(r=>r.ok?r.text():'');
  const section=full.split(/^(?=# )/m).find(s=>s.split('\n')[0].endsWith(path+')'));
- if(!section)return NextResponse.next();
+ if(!section)return NextResponse.next({headers:{'Vary':'Accept'}});
  const markdown=section.replace(/^# (.+) \(\S+\)\n/,(_,title:string)=>`---\ntitle: ${JSON.stringify(title)}\ncanonical: ${SITE_URL}${path}\n---\n\n# ${title}\n\n`);
- return new NextResponse(markdown,{headers:{'Content-Type':'text/markdown; charset=utf-8'}});
+ return new NextResponse(markdown,{headers:{'Content-Type':'text/markdown; charset=utf-8','Vary':'Accept'}});
 }
 /** Routes the app serves; files (a dot in the last segment), APIs and auth pages fall through to Next. */
 const PAGES=['/','/chrome','/companion','/docs','/legal','/mac','/mac/setup','/onboarding','/pricing','/privacy','/terms','/studio-preview','/studio-preview/landing','/studio-preview/onboarding'];
