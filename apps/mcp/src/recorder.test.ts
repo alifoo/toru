@@ -686,6 +686,33 @@ it('blurs where the recorded window showed who the user is, in the source the re
   }
 });
 
+it('hands the page blur the domains to keep and the texts to add, and refuses a malformed option', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'recorder-privacy-'));
+  const owner = randomUUID();
+  const driver = {
+    goto: vi.fn(async () => undefined), dispose: vi.fn(async () => undefined), startRecording: vi.fn(), recordingMode: 'screencast',
+    redactSensitiveText: vi.fn(async () => undefined), stopRecording: vi.fn(async () => ({ body: Buffer.from('raw capture'), redactionPassed: true })),
+    screenshot: vi.fn(async () => ({ body: Buffer.from('preview'), redactionPassed: true })),
+    pointerTrail: () => [], pointerTelemetry: () => [], semanticTimeline: () => [], identitySightings: () => [],
+  };
+  const recorder = new Recorder({ dataDir: dir, encryptionKey: randomBytes(32),
+    createContext: vi.fn(async () => driver) as unknown as RecorderOptions['createContext'],
+    createLocalContext: vi.fn(async () => driver) as unknown as NonNullable<RecorderOptions['createLocalContext']>, render: async () => Buffer.from('video') });
+  try {
+    await recorder.initialize();
+    await expect(recorder.call(owner, 'session_open', { url: 'https://app.example.com/', localConnectionId: randomUUID(),
+      privacy: { keepEmailDomains: ['not a domain'] } })).rejects.toThrow();
+    const id = String((await recorder.call(owner, 'session_open', { url: 'https://app.example.com/', localConnectionId: randomUUID(),
+      privacy: { keepEmailDomains: ['UseNock.com', 'usenock.com'], blurTexts: ['Rafael Paduan'] } })).structuredContent?.id);
+    await recorder.call(owner, 'recording_start', { id });
+    expect(driver.redactSensitiveText).toHaveBeenCalledWith({ keepEmailDomains: ['usenock.com'], blurTexts: ['Rafael Paduan'] });
+    await recorder.call(owner, 'recording_stop', { id });
+  } finally {
+    await recorder.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 it('leaves e-mails unblurred, in the page and in the render, when the user asked to show them', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'recorder-show-emails-'));
   const owner = randomUUID();

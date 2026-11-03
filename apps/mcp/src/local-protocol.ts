@@ -33,6 +33,17 @@ export function assertLocalCommand(command:LocalCommand):void {
     const text=(options as {text?:unknown}|undefined)?.text;
     if(text!==undefined&&(typeof text!=='string'||text.length>300))throw new Error('local_method_forbidden');
   }
+  if(command.method==='redactSensitiveText'){
+    // What the page blur keeps and adds: e-mail domains and short texts, nothing the page could run.
+    const [options]=command.args;
+    if(command.args.length>1)throw new Error('local_method_forbidden');
+    if(options!==undefined){
+      if(typeof options!=='object'||options===null||Array.isArray(options)||Object.keys(options).some(key=>key!=='keepEmailDomains'&&key!=='blurTexts'))throw new Error('local_method_forbidden');
+      const {keepEmailDomains,blurTexts}=options as {keepEmailDomains?:unknown;blurTexts?:unknown};
+      const strings=(value:unknown,count:number,length:number)=>value===undefined||(Array.isArray(value)&&value.length<=count&&value.every(item=>typeof item==='string'&&item.length<=length));
+      if(!strings(keepEmailDomains,20,253)||!strings(blurTexts,200,200))throw new Error('local_method_forbidden');
+    }
+  }
   if(command.method==='pressKey'){
     const key=command.args[0];
     if(typeof key!=='string'||key.length>50)throw new Error('local_method_forbidden');

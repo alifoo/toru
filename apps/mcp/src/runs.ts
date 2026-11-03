@@ -8,6 +8,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { compilePlan, lacksAttention, planSchema, planValues } from './run-plan.js';
 import { viewportSchema } from './viewport.js';
+import { privacySchema } from './privacy.js';
 import type { AuthorizationCheck } from './lifecycle.js';
 import type { RecorderDatabase } from './store/database.js';
 
@@ -39,6 +40,8 @@ export const runSchema = z.object({
   viewport: viewportSchema.optional(),
   /** Toru for Chrome: the user approved showing e-mail addresses (their own product's), so nothing is blurred. */
   showEmails: z.boolean().optional().describe("Toru for Chrome only: true when the user asked to show the e-mail addresses on screen (their own product). Neither the page nor the render blurs them then. Leave it out otherwise."),
+  /** Toru for Chrome: e-mail domains that stay legible and extra texts to blur (see privacy.ts). */
+  privacy: privacySchema.optional(),
   render: z.object({ background: z.enum(['midnight', 'ocean', 'sunset', ...backgroundCatalog.map(entry => entry.id)] as [string, ...string[]]).optional(), padding: z.number().finite().min(0).max(100).optional(),
     cursorScale: z.number().finite().min(0.5).max(3).optional(), compressPauses: z.boolean().optional(), gif: z.boolean().optional(), width: z.union([z.literal(1280), z.literal(1920), z.literal(2560)]).optional() }).default({}),
 });
@@ -296,7 +299,7 @@ export class RunController {
         if (run.state !== 'planning') await enter('planning');
       }
       const session = await call('session_open', { url: openUrl, requestId: run.id, ...(input.localConnectionId ? { localConnectionId: input.localConnectionId } : {}), ...(input.viewport ? { viewport: input.viewport } : {}),
-        ...(input.showEmails ? { showEmails: true } : {}), ...(importId ? { importId } : {}), ...(input.allowedOrigins ? { allowedOrigins: input.allowedOrigins } : {}) });
+        ...(input.showEmails ? { showEmails: true } : {}), ...(input.privacy ? { privacy: input.privacy } : {}), ...(importId ? { importId } : {}), ...(input.allowedOrigins ? { allowedOrigins: input.allowedOrigins } : {}) });
       if (typeof session.id !== 'string' || session.status !== 'ready') throw new Error('session_not_ready');
       run.sessionId = session.id; this.persist(run);
       const dir = await this.artifacts.artifactDir(run.owner, session.id);

@@ -1,5 +1,6 @@
 export { spawnBrowserProcess, stopBrowserProcess } from './browser-process.js';
 export { browserProcessEnvironment } from './process-environment.js';
+import type { PrivacyOptions } from "./privacy-redactor.js";
 import { isIP } from "node:net";
 import { getDomain } from "tldts";
 import { z } from "zod";
@@ -429,8 +430,11 @@ export interface BrowserContextDriver {
   waitFor(locator: CaptureLocator): Promise<void>;
   assertVisible(locator: CaptureLocator): Promise<void>;
   mask(locator: CaptureLocator, mode?: "mask" | "blur"): Promise<void>;
-  /** Blurs contact details already on the page and anything matching that appears later. */
-  redactSensitiveText(): Promise<void>;
+  /**
+   * Blurs contact details already on the page and anything matching that appears later, on every document the
+   * session opens from then on. `options` keeps a company's own addresses legible and adds texts to blur.
+   */
+  redactSensitiveText(options?: PrivacyOptions): Promise<void>;
   screenshot(name: string, fullPage: boolean): Promise<CaptureArtifact>;
   computer(actions: readonly ComputerAction[]): Promise<void>;
   startRecording(): Promise<void>;
@@ -988,4 +992,5 @@ export * from "./browser-toolset.js";
 export * from "./demo-recipe.js";
 export { isLocalDevelopmentUrl, sameLocalHost } from "./local-development.js";
 export * from "./screencast.js";
+export * from "./privacy-redactor.js";
 export * from "./webdriver.js";

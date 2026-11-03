@@ -49,23 +49,25 @@ import {
   frameHash,
   type StreamingVideoEncoder,
 } from "./screencast.js";
+import { normalizePrivacyOptions, privacyRedactorScript, type PrivacyOptions } from "./privacy-redactor.js";
 
 /**
  * Rectangles of the email addresses visible in the viewport: in text, and in field values (an email input the user
  * filled). Fractions of the viewport; open shadow roots and same-origin frames included. Never returns the text.
  */
-const identityRectsScript = `
-const pattern=/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi, out=[], vw=innerWidth, vh=innerHeight;
+const identityRectsScript = (keep: readonly string[]) => `
+const pattern=/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi, out=[], vw=innerWidth, vh=innerHeight, keep=${JSON.stringify(keep)};
+const kept=a=>{const d=a.slice(a.lastIndexOf('@')+1).toLowerCase();return keep.some(k=>d===k||d.endsWith('.'+k));};
 const push=(r,dx,dy)=>{const x=(r.left+dx)/vw,y=(r.top+dy)/vh,w=r.width/vw,h=r.height/vh;if(w>0&&h>0&&x<1&&y<1&&x+w>0&&y+h>0)out.push({x:Math.max(0,x),y:Math.max(0,y),width:Math.min(1,x+w)-Math.max(0,x),height:Math.min(1,y+h)-Math.max(0,y)});};
 const visit=(root,dx,dy)=>{
   const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
   for(let node=walker.nextNode();node&&out.length<60;node=walker.nextNode()){
     const text=node.nodeValue;if(!text||text.indexOf('@')<0)continue;
     const style=node.parentElement&&getComputedStyle(node.parentElement);if(style&&(style.visibility==='hidden'||style.display==='none'))continue;
-    pattern.lastIndex=0;for(const match of text.matchAll(pattern)){const range=document.createRange();range.setStart(node,match.index);range.setEnd(node,match.index+match[0].length);
+    pattern.lastIndex=0;for(const match of text.matchAll(pattern)){if(kept(match[0]))continue;const range=document.createRange();range.setStart(node,match.index);range.setEnd(node,match.index+match[0].length);
       for(const r of range.getClientRects())push(r,dx,dy);}
   }
-  for(const field of root.querySelectorAll('input,textarea')){const v=field.value||'';pattern.lastIndex=0;const filled=v.indexOf('@')>=0&&pattern.test(v);pattern.lastIndex=0;if(filled)push(field.getBoundingClientRect(),dx,dy);}
+  for(const field of root.querySelectorAll('input,textarea')){const v=field.value||'';const filled=v.indexOf('@')>=0&&[...v.matchAll(pattern)].some(m=>!kept(m[0]));if(filled)push(field.getBoundingClientRect(),dx,dy);}
   for(const el of root.querySelectorAll('*')){if(el.shadowRoot)visit(el.shadowRoot,dx,dy);
     if(el.tagName==='IFRAME'){try{const doc=el.contentDocument;if(doc&&doc.body){const r=el.getBoundingClientRect();visit(doc.body,dx+r.left,dy+r.top);}}catch{}}}
 };
@@ -595,6 +597,10 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
   recordingFailure: Error | null = null;
   screencast: CdpScreencastRecorder | null = null;
   recordingStartedAtMs: number | null = null;
+  /** The live blur's page script once redactSensitiveText ran, and the domains whose addresses stay legible. */
+  private privacySource: string | null = null;
+  private privacyKeep: string[] = [];
+  private privacyScriptId: string | null = null;
   /** Seeded at each recording's start, so its gestures vary between trips but not between re-runs of a seed. */
   private motion: () => number = motionRandom(1);
   private lastRecordedRoute: string | undefined;
@@ -980,7 +986,9 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
     if (this.recordingStartedAtMs === null) return;
     const startedAt = this.recordingStartedAtMs;
     try {
-      const rects = await this.executeScript("identity_rects", identityRectsScript, []);
+      // Again on every read: a frame or a page Chrome opened without the document-start script gets it here.
+      if (this.privacySource) await this.executeScript("ensure_redactor", this.privacySource, []).catch(() => undefined);
+      const rects = await this.executeScript("identity_rects", identityRectsScript(this.privacyKeep), []);
       if (!Array.isArray(rects)) return;
       const valid = rects.filter((rect): rect is { x: number; y: number; width: number; height: number } =>
         isObject(rect) && [rect.x, rect.y, rect.width, rect.height].every((value) => typeof value === "number" && Number.isFinite(value))
@@ -1534,65 +1542,35 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
    * is read instead: a table holding contact details is a table of people, and in that table the
    * column whose heading names a person is blurred too. Scoping it to tables that already matched
    * matters — a "Nome" column elsewhere in the product lists spreadsheets, and blurring those would
-   * cost a demo for nothing.
+   * cost a demo for nothing. Outside tables, an address takes the name beside it (a row of an account
+   * chooser or an inbox, "Name <address>"), and `blurTexts` covers names no pattern can find. Addresses
+   * on `keepEmailDomains` stay legible, here and in the render's own boxes (identitySightings).
    */
-  async redactSensitiveText(): Promise<void> {
-    await this.executeScript(
-      "install_redactor",
-      `if (!window.__captureRedactor) {
-         const style = document.createElement('style');
-         style.textContent = '.__cl-redacted{filter:blur(7px)!important;}';
-         document.documentElement.appendChild(style);
-         // An address, or a run of digits long enough to be a telephone number. Deliberately blunt:
-         // a false positive costs one blurred cell, a false negative publishes somebody's number.
-         const email = /[\\w.!#$%&'*+/=?^\`{|}~-]+@[\\w-]+(?:\\.[\\w-]+)+/;
-         const telephone = /(?:\\+?\\d[\\d ().-]{7,}\\d)/;
-         // Headings that introduce a person rather than a thing. Short list, both languages this
-         // product ships in; anything unmatched simply stays legible.
-         const personHeading = /^\\s*(nome|name|full name|nome completo|contato|contact|pessoa|person|lead)\\b/i;
-         const redact = (element) => element.classList.add('__cl-redacted');
-         const scan = () => {
-           const elements = document.body ? document.body.querySelectorAll('*') : [];
-           for (const element of elements) {
-             if (element.childElementCount > 0) continue;
-             if (element.classList.contains('__cl-redacted')) continue;
-             const text = element.textContent;
-             if (!text || text.length > 200) continue;
-             if (email.test(text) || telephone.test(text)) redact(element);
-           }
-           for (const table of document.querySelectorAll('table')) {
-             if (!table.querySelector('.__cl-redacted')) continue;
-             const rows = table.rows;
-             const heading = rows[0];
-             if (!heading) continue;
-             const columns = [];
-             for (let index = 0; index < heading.cells.length; index++) {
-               if (personHeading.test(heading.cells[index].textContent || '')) columns.push(index);
-             }
-             for (let rowIndex = 1; rowIndex < rows.length; rowIndex++) {
-               for (const column of columns) {
-                 const cell = rows[rowIndex].cells[column];
-                 if (cell) redact(cell);
-               }
-             }
-           }
-         };
-         let queued = false;
-         const schedule = () => {
-           if (queued) return;
-           queued = true;
-           // Coalesced: a results table mutates once per row, and scanning per mutation on a page
-           // being driven by an agent is a visible stall in the recording.
-           setTimeout(() => { queued = false; scan(); }, 150);
-         };
-         window.__captureRedactor = new MutationObserver(schedule);
-         window.__captureRedactor.observe(document.documentElement, {
-           childList: true, subtree: true, characterData: true,
-         });
-         scan();
-       }`,
-      [],
-    );
+  async redactSensitiveText(options?: PrivacyOptions): Promise<void> {
+    const source = privacyRedactorScript(options);
+    this.privacySource = source;
+    this.privacyKeep = normalizePrivacyOptions(options).keep;
+    /**
+     * Every document from now on runs it before its own scripts and before its first paint: a sign-in redirect, an
+     * OAuth consent screen on another site, a webmail opened from the product. Run only on the page already open,
+     * it went with that page, and the account chooser and the inbox after it were recorded legible.
+     */
+    const previous = this.privacyScriptId;
+    this.privacyScriptId = null;
+    if (previous) {
+      await this.command("remove_redactor", () => this.transport.request("POST", `${this.basePath}/goog/cdp/execute`, {
+        cmd: "Page.removeScriptToEvaluateOnNewDocument", params: { identifier: previous },
+      })).catch(() => undefined);
+    }
+    try {
+      const installed = await this.command("install_redactor_new_documents", () => this.transport.request("POST", `${this.basePath}/goog/cdp/execute`, {
+        cmd: "Page.addScriptToEvaluateOnNewDocument", params: { source },
+      }));
+      if (isObject(installed) && typeof installed.identifier === "string") this.privacyScriptId = installed.identifier;
+    } catch {
+      // A browser that refuses it still gets the script on each read while recording (readIdentity).
+    }
+    await this.executeScript("install_redactor", source, []);
   }
 
   async screenshot(name: string, fullPage: boolean): Promise<CaptureArtifact> {

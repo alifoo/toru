@@ -76,12 +76,14 @@ export async function applyBrand(video: Buffer, brand: Brand | undefined, signal
       applied.push('cards');
       const colour = cardColour(brand), fps = Math.min(60, Math.max(1, Math.round(info.fps)));
       const filter = [
-        `[1:v]scale=-1:${logoHeight}[logo]`, `[1:v]scale=-1:${cardLogoHeight}[cardlogo]`,
+        // A labelled output feeds one input only before ffmpeg 7.1 (the 5.1 render host, 6.1 in CI): split it per use.
+        `[1:v]split=2[logosource][cardsource]`, `[logosource]scale=-1:${logoHeight}[logo]`,
+        `[cardsource]scale=-1:${cardLogoHeight},split=2[cardlogo1][cardlogo2]`,
         `[0:v][logo]overlay=${place}:format=auto,fps=${fps},format=yuv420p[main]`,
         `color=c=${colour}:s=${info.width}x${info.height}:d=1.5:r=${fps},format=yuv420p[c1]`,
         `color=c=${colour}:s=${info.width}x${info.height}:d=1.5:r=${fps},format=yuv420p[c2]`,
-        `[c1][cardlogo]overlay=(W-w)/2:(H-h)/2:format=auto,format=yuv420p,fade=t=in:st=0:d=0.3,fade=t=out:st=1.2:d=0.3[intro]`,
-        `[c2][cardlogo]overlay=(W-w)/2:(H-h)/2:format=auto,format=yuv420p,fade=t=in:st=0:d=0.3[outro]`,
+        `[c1][cardlogo1]overlay=(W-w)/2:(H-h)/2:format=auto,format=yuv420p,fade=t=in:st=0:d=0.3,fade=t=out:st=1.2:d=0.3[intro]`,
+        `[c2][cardlogo2]overlay=(W-w)/2:(H-h)/2:format=auto,format=yuv420p,fade=t=in:st=0:d=0.3[outro]`,
         `[intro][main][outro]concat=n=3:v=1:a=0[v]`,
       ].join(';');
       await run(['-i', input, '-i', logo, '-filter_complex', filter, '-map', '[v]', '-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', output], signal);
@@ -121,7 +123,11 @@ export async function redactRegions(sourcePath: string, outputPath: string, regi
     parts.push(`[c${index}]crop=${box.w}:${box.h}:${box.x}:${box.y},scale=${small}:flags=area,scale=${box.w}:${box.h}:flags=bicubic${radius >= 1 ? `,boxblur=${radius}:1` : ''}[b${index}]`);
     parts.push(`[s${index}][b${index}]overlay=${box.x}:${box.y}:enable='between(t,${box.from},${box.to})'[s${index + 1}]`);
   });
-  await run(['-i', sourcePath, '-filter_complex', parts.join(';'), '-map', `[s${boxes.length}]`, '-an',
+  // One thread per filter. Each scale filter otherwise starts a slice thread per core: 47 boxes on the 48-core
+  // render host asked for ~4,500 threads against the container's 1,000-process limit, and ffmpeg failed to configure
+  // the graph ("Failed to configure output pad on auto_scale_N ... Resource temporarily unavailable"), so every long
+  // capture that crossed a sign-in or an inbox never rendered. The boxes are tiny; the encoder keeps its own threads.
+  await run(['-i', sourcePath, '-filter_complex_threads', '1', '-filter_complex', parts.join(';'), '-map', `[s${boxes.length}]`, '-an',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '14', '-pix_fmt', 'yuv420p', outputPath], signal);
 }
 export async function makeGif(videoPath: string, gifPath: string, signal?: AbortSignal, width = 960): Promise<void> {

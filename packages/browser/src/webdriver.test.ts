@@ -205,7 +205,9 @@ describe("WebDriverBrowserDriver", () => {
       // 550ms plus half the 894px distance, however long the page took over each move.
       const travel = moveTimes.at(-1)! - moveTimes[0]!;
       expect(travel).toBeGreaterThanOrEqual(850);
-      expect(travel).toBeLessThanOrEqual(1_100);
+      // The stretch this guards against is a 45ms answer added to every step (over 2s). A shared CI runner lands at
+      // 1.18-1.21s on the wall clock for the intended ~1s, so the ceiling leaves room for that and nothing more.
+      expect(travel).toBeLessThanOrEqual(1_350);
       expect(moveTimes.length).toBeGreaterThan(10);
     } finally {
       await context.dispose();

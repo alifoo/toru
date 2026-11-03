@@ -395,7 +395,9 @@ export class CdpWebDriverTransport implements WebDriverTransport {
   }
 
   private async cdp(command: string, params: Json) {
-    const allowed = this.options.allowedCdpCommands ?? ["Emulation.setDeviceMetricsOverride"];
+    // The live blur installs itself on every new document (redactSensitiveText); page scripts only, never storage.
+    const allowed = this.options.allowedCdpCommands ?? ["Emulation.setDeviceMetricsOverride",
+      "Page.addScriptToEvaluateOnNewDocument", "Page.removeScriptToEvaluateOnNewDocument"];
     // Storage restore with an empty state sends nothing; any other command, cookies included, is refused.
     if (!allowed.includes(command)) throw new WebDriverProtocolError("unknown command");
     return this.channel.send(command, params);
