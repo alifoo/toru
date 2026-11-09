@@ -676,6 +676,9 @@ export class FrameRenderer {
 				getNativeCursorClickBounceProgress(this.config.cursorRecordingData, timeMs),
 			);
 		const appliedScale = this.animationState.appliedScale;
+		// The pointer grows with the camera only by the square root of the zoom: drawn at the full zoom it doubled at 2×
+		// and dwarfed the page it points at (Toru demos, 09/11/2026). Its position still follows the camera exactly.
+		const cursorZoom = Math.sqrt(Math.max(1, appliedScale));
 		// Normalize cursor size to the same fraction of video width as the preview;
 		// both paths use maskRect.width / croppedVideoWidth.
 		const sizeNorm =
@@ -710,10 +713,10 @@ export class FrameRenderer {
 		}
 		this.foregroundCtx.drawImage(
 			image,
-			canvasX - renderAsset.hotspotX * scale * appliedScale * sizeNorm,
-			canvasY - renderAsset.hotspotY * scale * appliedScale * sizeNorm,
-			renderAsset.width * scale * appliedScale * sizeNorm,
-			renderAsset.height * scale * appliedScale * sizeNorm,
+			canvasX - renderAsset.hotspotX * scale * cursorZoom * sizeNorm,
+			canvasY - renderAsset.hotspotY * scale * cursorZoom * sizeNorm,
+			renderAsset.width * scale * cursorZoom * sizeNorm,
+			renderAsset.height * scale * cursorZoom * sizeNorm,
 		);
 		this.foregroundCtx.filter = previousFilter;
 		this.foregroundCtx.restore();

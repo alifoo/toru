@@ -93,7 +93,7 @@ export class ExtensionBridge {
   if(d.pending){clearTimeout(d.pending.timer);d.pending.reject(new Error(reason));delete d.pending;}
  }
  close(){clearInterval(this.cleanup);for(const d of this.live.values())this.release(d,'extension_disconnected');this.live.clear();this.pairings.clear();}
- async createContext(owner:string,id:string,options:BrowserContextOptions & {captureId?:string}):Promise<Driver>{
+ async createContext(owner:string,id:string,options:BrowserContextOptions & {captureId?:string;sharpCapture?:boolean}):Promise<Driver>{
   const d=this.live.get(id);
   if(!d||d.owner!==owner)throw new Error('local_browser_not_found');
   if(d.lastSeen<=Date.now()-onlineWindowMs)throw new Error('extension_offline');
@@ -144,7 +144,7 @@ export class ExtensionBridge {
      if(!localDevelopment&&!sameProductSite(url,product))throw new Error('local_browser_product_mismatch');
      opened=true;
      // The page layout to record. An extension before 0.1.8 ignores it and records 1280x720; each reports what it used.
-     const current=await invoke('open',[{url,allowedOrigins:options.allowedOrigins,viewport:{width:options.viewport.width,height:options.viewport.height}}]);
+     const current=await invoke('open',[{url,allowedOrigins:options.allowedOrigins,viewport:{width:options.viewport.width,height:options.viewport.height},...(options.sharpCapture?{sharpCapture:true}:{})}]);
      if(typeof current!=='string')throw new Error('local_browser_url_invalid');
      options.onNavigation(current,0);return;
     }

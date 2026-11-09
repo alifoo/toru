@@ -39,6 +39,8 @@ export const runSchema = z.object({
   loginEmail: z.string().trim().min(3).max(320).optional(), useDemoAccount: z.boolean().optional(),
   /** The page layout Toru for Chrome records (CSS viewport); 1920x1080 when absent. */
   viewport: viewportSchema.optional(),
+  /** Toru for Chrome: 2560-wide capture on a 1x screen, at the cost of a flickering recording window. */
+  sharpCapture: z.boolean().optional().describe("Toru for Chrome: true records the page at 2560 wide even when the Toru window is on a 1x screen (an external 1080p monitor), for a sharp video that zooms in cleanly. The recording window flickers while it records. Without it a 1x screen records 1920x1080 and a Retina screen 2560 either way. Use it for landing or launch videos when the window is on a 1x screen."),
   /** Toru for Chrome: the user approved showing e-mail addresses (their own product's), so nothing is blurred. */
   showEmails: z.boolean().optional().describe("Toru for Chrome only: true when the user asked to show the e-mail addresses on screen (their own product). Neither the page nor the render blurs them then. Leave it out otherwise."),
   /** Toru for Chrome: e-mail domains that stay legible and extra texts to blur (see privacy.ts). */
@@ -310,7 +312,7 @@ export class RunController {
         }
         if (run.state !== 'planning') await enter('planning');
       }
-      const session = await call('session_open', { url: openUrl, requestId: run.id, ...(input.localConnectionId ? { localConnectionId: input.localConnectionId } : {}), ...(input.viewport ? { viewport: input.viewport } : {}),
+      const session = await call('session_open', { url: openUrl, requestId: run.id, ...(input.localConnectionId ? { localConnectionId: input.localConnectionId } : {}), ...(input.viewport ? { viewport: input.viewport } : {}), ...(input.sharpCapture ? { sharpCapture: true } : {}),
         ...(input.showEmails ? { showEmails: true } : {}), ...(input.privacy ? { privacy: input.privacy } : {}), ...(importId ? { importId } : {}), ...(input.allowedOrigins ? { allowedOrigins: input.allowedOrigins } : {}) });
       if (typeof session.id !== 'string' || session.status !== 'ready') throw new Error('session_not_ready');
       run.sessionId = session.id; this.persist(run);

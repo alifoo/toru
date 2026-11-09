@@ -171,7 +171,7 @@ export type RecorderOptions = {
   deployment?: DeploymentIdentity;
   lifecycle?: LifecycleFactory;
   createContext(options: BrowserContextOptions): Promise<Driver>;
-  createLocalContext?(owner:string, connectionId:string, options:BrowserContextOptions & {captureId?:string}):Promise<Driver>;
+  createLocalContext?(owner:string, connectionId:string, options:BrowserContextOptions & {captureId?:string;sharpCapture?:boolean}):Promise<Driver>;
   render(sourcePath: string, config: Record<string, unknown>, signal: AbortSignal, onProgress: (progress: RenderProgress) => void): Promise<Buffer>;
   /** Delivery quality check; defaults to the ffmpeg-based assessor. */
   assessQuality?: QualityAssessor;
@@ -1044,7 +1044,7 @@ export class Recorder {
     const requestId=args.requestId===undefined?undefined:uuid.parse(args.requestId);
     const viewport=viewportOf(args.viewport);
     const privacy=privacyOf(args.privacy);
-    const inputHash=createHash('sha256').update(JSON.stringify({url:args.url,allowedOrigins:args.allowedOrigins ?? null,importId:args.importId ?? null,...(localId?{localConnectionId:localId}:{}),...(args.viewport!==undefined?{viewport:args.viewport}:{}),...(args.showEmails===true?{showEmails:true}:{}),...(args.privacy!==undefined?{privacy:args.privacy}:{}),connect:deferNavigation})).digest('hex');
+    const inputHash=createHash('sha256').update(JSON.stringify({url:args.url,allowedOrigins:args.allowedOrigins ?? null,importId:args.importId ?? null,...(localId?{localConnectionId:localId}:{}),...(args.viewport!==undefined?{viewport:args.viewport}:{}),...(args.sharpCapture===true?{sharpCapture:true}:{}),...(args.showEmails===true?{showEmails:true}:{}),...(args.privacy!==undefined?{privacy:args.privacy}:{}),connect:deferNavigation})).digest('hex');
     const operation=deferNavigation?'session_connect':'session_open';
     if(requestId) {
       const receipt=this.store.connection.prepare('SELECT job_id,input_hash FROM operation_requests WHERE owner=? AND operation=? AND request_id=?').get(owner,operation,requestId);
@@ -1091,7 +1091,7 @@ export class Recorder {
           viewport: localId ? viewport : { width: 1920, height: 1080 }, allowedOrigins, sessionState: state,
           onNavigation: target => this.validateUrl(target, allowedOrigins, Boolean(localId)), allowDownload: false, allowPopup: false,
         };
-        driver = localId ? await this.options.createLocalContext!(owner,localId,{...contextOptions,captureId:job.id}) : await this.options.createContext(contextOptions);
+        driver = localId ? await this.options.createLocalContext!(owner,localId,{...contextOptions,captureId:job.id,...(args.sharpCapture===true?{sharpCapture:true}:{})}) : await this.options.createContext(contextOptions);
         if(localId && driver.capturePrivacy!=='user-approved-desktop')this.browserReservation=await this.reserve(owner,'browserMs',job.policy?.sessionMs ?? limits.session,job.id);
         if(localId&&args.showEmails===true&&driver.capturePrivacy!=='user-approved-desktop'){job.showEmails=true;await this.save(job);}
         if(privacy&&driver.capturePrivacy!=='user-approved-desktop'){job.privacy=privacy;await this.save(job);}
