@@ -125,6 +125,11 @@ function channelFor(tabId: number): DebuggerChannel {
   // gave the browser up. A press that fails never sends its release, so it clears the flag itself.
   let capturing: Promise<unknown> | undefined, inputting: Promise<unknown> | undefined, observing: Promise<unknown> | undefined;
   const inFlight = new Set<Promise<unknown>>();
+  // Two frames in flight at once leave Chrome mapping every later mouse event through the wrong scale, for good: on a
+  // 1x screen at a scale of 2 a press aimed at (1316, 717) lands at (658, 358), and the next card along opens. Setting
+  // the same device metrics again puts it right (no resize, under a millisecond), so a mouse event that follows an
+  // overlap sends them first.
+  let metrics: Record<string, unknown> | undefined, overlapped = false;
   let pressed = false, releasedAt = 0;
   const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
   const send = async (method: string, params: Record<string, unknown> = {}) => {
@@ -139,6 +144,10 @@ function channelFor(tabId: number): DebuggerChannel {
       let failed = false;
       try {
         await Promise.race([Promise.all([capturing?.catch(() => undefined), previous]), pause(1_500)]);
+        if (overlapped && metrics && !inFlight.size) {
+          overlapped = false;
+          await worker('send', { tabId, method: 'Emulation.setDeviceMetricsOverride', params: metrics }).catch(() => undefined);
+        }
         return await worker('send', { tabId, method, params });
       }
       catch (error) { failed = true; throw error; }
@@ -158,6 +167,7 @@ function channelFor(tabId: number): DebuggerChannel {
       // all of them, not only the last one asked for.
       const frame = Promise.race([worker('send', { tabId, method, params }),
         pause(5_000).then(() => { throw new Error('screenshot_timeout'); })]);
+      if (inFlight.size || observing) overlapped = true;
       inFlight.add(frame);
       capturing = Promise.allSettled([...inFlight]);
       try { return await frame; }
@@ -175,6 +185,7 @@ function channelFor(tabId: number): DebuggerChannel {
       observing = mine;
       try {
         await Promise.race([capturing?.catch(() => undefined), pause(1_500)]);
+        if (inFlight.size) overlapped = true;
         try { return await once(); }
         catch (error) {
           if ((error as Error).message !== 'screenshot_timeout') throw error;
@@ -186,6 +197,8 @@ function channelFor(tabId: number): DebuggerChannel {
         if (observing === mine) observing = undefined;
       }
     }
+    if (method === 'Emulation.setDeviceMetricsOverride') metrics = params;
+    if (method === 'Emulation.clearDeviceMetricsOverride') metrics = undefined;
     return worker('send', { tabId, method, params });
   };
   return {
