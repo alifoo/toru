@@ -500,13 +500,27 @@ final class Studio: ObservableObject {
         }
         recent = (try? journal.load()) ?? recent
     }
+    /// The share that sleep or a lock ended, to resume when the user is back.
+    private var resumeWhenBack = false
     /// Sleep, lock and session switches end the lease: the armed consent must not outlive what the user can see.
+    /// When the user is back (awake, unlocked, their session in front), a paired Mac shares again by itself, as it
+    /// does at launch: before, it stayed offline until Toru was opened again (2026-11-08, 22:39 to 22:45).
     private func observeSystemEvents() {
-        let message = "Mac went to sleep, locked or switched user. Recording stopped and any local capture was saved. Approve a new recording to continue."
+        let message = "Mac went to sleep, locked or switched user. Recording stopped and any local capture was saved. Toru shares again when you are back."
         let handler: @Sendable (Notification) -> Void = { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.connected || self.recording else { return }
+                // A recording the user started from Toru is theirs to start again.
+                let resume = !self.manual
                 await self.disconnect(message: message)
+                self.resumeWhenBack = resume
+            }
+        }
+        let back: @Sendable (Notification) -> Void = { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.resumeWhenBack, !Studio.screenLocked else { return }
+                self.resumeWhenBack = false
+                self.scheduleReconnect()
             }
         }
         let workspace = NSWorkspace.shared.notificationCenter
@@ -514,6 +528,14 @@ final class Studio: ObservableObject {
             systemObservers.append(workspace.addObserver(forName: name, object: nil, queue: .main, using: handler))
         }
         systemObservers.append(DistributedNotificationCenter.default().addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main, using: handler))
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification, NSWorkspace.screensDidWakeNotification] {
+            systemObservers.append(workspace.addObserver(forName: name, object: nil, queue: .main, using: back))
+        }
+        systemObservers.append(DistributedNotificationCenter.default().addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main, using: back))
+    }
+    /// The login window is over the user's session: displays awake but locked is not the user being back.
+    static var screenLocked: Bool {
+        (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
     }
     /// Watches the recorded source and free disk space; any violation stops safely without switching source.
     private func watch(source: CaptureSource, generation: UUID) {
@@ -1109,7 +1131,7 @@ final class Studio: ObservableObject {
         FileHandle.standardError.write("toru: disconnected: \(message)\n".data(using: .utf8)!)
         disconnecting = true; busy = true
         defer { busy = false; disconnecting = false }
-        reconnectTask?.cancel()
+        reconnectTask?.cancel(); resumeWhenBack = false
         connectionGeneration = UUID()
         retryTask?.cancel()
         await retryTask?.value
