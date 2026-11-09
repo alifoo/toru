@@ -124,6 +124,7 @@ function channelFor(tabId: number): DebuggerChannel {
   // screen, a window another one covers), and an unbounded wait there hung the click behind it until the server
   // gave the browser up. A press that fails never sends its release, so it clears the flag itself.
   let capturing: Promise<unknown> | undefined, inputting: Promise<unknown> | undefined, observing: Promise<unknown> | undefined;
+  const inFlight = new Set<Promise<unknown>>();
   let pressed = false, releasedAt = 0;
   const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
   const send = async (method: string, params: Record<string, unknown> = {}) => {
@@ -153,9 +154,14 @@ function channelFor(tabId: number): DebuggerChannel {
         const busy = inputting ?? observing;
         if (busy) await Promise.race([busy.catch(() => undefined), pause(250)]); else await pause(15);
       }
-      capturing = Promise.race([worker('send', { tabId, method, params }),
+      // Several frames can be in flight at once (the socket keeps a few going for a smooth capture): input waits for
+      // all of them, not only the last one asked for.
+      const frame = Promise.race([worker('send', { tabId, method, params }),
         pause(5_000).then(() => { throw new Error('screenshot_timeout'); })]);
-      return await capturing;
+      inFlight.add(frame);
+      capturing = Promise.allSettled([...inFlight]);
+      try { return await frame; }
+      finally { inFlight.delete(frame); capturing = inFlight.size ? Promise.allSettled([...inFlight]) : undefined; }
     }
     if (method === 'Page.captureScreenshot') {
       // The navigator's observation. Two screenshots at once render the view at two scales, and the observation came
