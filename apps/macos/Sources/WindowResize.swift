@@ -33,7 +33,11 @@ struct WindowResize: @unchecked Sendable {
             return (WindowSizing.report(requested: name, preset: preset, target: target, before: before.size, after: before.size), nil)
         }
         let origin = WindowSizing.origin(for: target, from: before, in: visible)
-        let after = setFrame(element, windowID: windowID, CGRect(origin: origin, size: target)) ?? before
+        let set = setFrame(element, windowID: windowID, CGRect(origin: origin, size: target)) ?? before
+        // A tiling window manager (AeroSpace, yabai) lays the window out again a moment later: Linear went back from
+        // 1442x901 to 1920x1049 while Toru reported, recorded and screenshotted it at 1442x901 (2026-11-08). The size
+        // it keeps is the one reported.
+        let after = settled(windowID, set)
         let undo = WindowResize(element: element, windowID: windowID, original: before)
         let report = WindowSizing.report(requested: name, preset: preset, target: target, before: before.size, after: after.size)
         if !report.resized {
@@ -49,7 +53,17 @@ struct WindowResize: @unchecked Sendable {
     func restore() -> Bool {
         guard Self.frame(of: element) != nil else { return true }
         guard let now = Self.setFrame(element, windowID: windowID, original) else { return false }
-        return WindowSizing.close(now.size, original.size) && abs(now.minX - original.minX) <= 2 && abs(now.minY - original.minY) <= 2
+        return WindowSizing.same(now, original)
+    }
+
+    /// The window's frame once whatever reacts to a resize (a tiling window manager) has had its moment, ~0.6s.
+    private static func settled(_ windowID: CGWindowID, _ frame: CGRect) -> CGRect {
+        var now = frame
+        for _ in 0..<12 {
+            Thread.sleep(forTimeInterval: 0.05)
+            now = AccessibilityOutline.bounds(of: windowID) ?? now
+        }
+        return now
     }
 
     /// A screen's frame and visible frame (without menu bar and Dock), in top-left screen coordinates.

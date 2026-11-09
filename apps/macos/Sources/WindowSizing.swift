@@ -30,6 +30,12 @@ enum WindowSizing {
         abs(a.width - b.width) <= tolerance && abs(a.height - b.height) <= tolerance
     }
 
+    /// The same place and size, within a couple of points. A window that is not has its controls elsewhere: what was
+    /// read before it moved or changed size (refs, positions) no longer points at them.
+    static func same(_ a: CGRect, _ b: CGRect) -> Bool {
+        close(a.size, b.size) && abs(a.minX - b.minX) <= 2 && abs(a.minY - b.minY) <= 2
+    }
+
     /// What happened to the shared window, reported with the recording (capture metadata `desktopWindow`).
     struct Report: Equatable {
         enum Reason: String {
@@ -37,7 +43,8 @@ enum WindowSizing {
             case controlOff = "control_off"
             /// A display is shared; displays are never resized.
             case display
-            /// The window refused a new size (fixed-size windows) or is full screen.
+            /// The window refused a new size (fixed-size windows), is full screen, or a tiling window manager (AeroSpace,
+            /// yabai) laid it out again at its old size a moment after Toru resized it.
             case notResizable = "not_resizable"
             /// The preset did not fit the screen; the largest size with its aspect ratio that fits was used.
             case fittedToScreen = "fitted_to_screen"

@@ -35,6 +35,16 @@ import CoreGraphics
         var restored = resized; restored.restored = true
         precondition(restored.payload["restored"] as? Bool == true && restored.payload["reason"] == nil && restored.payload["width"] as? Int == 1920)
         precondition(refused.payload["reason"] as? String == "not_resizable")
-        print("PASS: presets, fit to the visible frame, placement, resize reports")
+        // A tiling window manager put Linear back at 1920x1049 right after Toru gave it 1442x901: the report is the size
+        // it kept, not the one it held for a moment (2026-11-08).
+        let retiled = WindowSizing.report(requested: "1440x900", preset: CGSize(width: 1440, height: 900), target: CGSize(width: 1440, height: 900),
+                                          before: CGSize(width: 1920, height: 1049), after: CGSize(width: 1920, height: 1049))
+        precondition(!retiled.resized && retiled.reason == .notResizable && retiled.width == 1920 && retiled.height == 1049)
+        // A window read before it moved or changed size is no longer where its controls were read.
+        let window = CGRect(x: 1470, y: -94, width: 1920, height: 1049)
+        precondition(WindowSizing.same(window, CGRect(x: 1471, y: -93, width: 1921, height: 1048)))
+        precondition(!WindowSizing.same(window, CGRect(x: 1470, y: -94, width: 1442, height: 901)))
+        precondition(!WindowSizing.same(window, CGRect(x: 1500, y: -94, width: 1920, height: 1049)))
+        print("PASS: presets, fit to the visible frame, placement, resize reports, moved windows")
     }
 }

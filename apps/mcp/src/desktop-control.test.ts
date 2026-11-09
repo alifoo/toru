@@ -54,6 +54,25 @@ it('lets a Mac that allowed control answer page methods, and reports it',async()
  await click;
 });
 
+it('tells the agent a Mac step timed out, and keeps the share for the next one',async()=>{
+ const {bridge,id,token}=await connected(true);
+ const driver=await bridge.createContext('owner',id,{...options,captureId:'00000000-0000-4000-8000-000000000003'});
+ // Linear did not answer while its window was read after a click (2026-11-08): the Mac says so instead of going silent.
+ const read=driver.readPage({filter:'interactive'});
+ const {value:{command}}=await post(bridge,'poll',{},token);
+ expect((await post(bridge,'result/'+command.id,{error:'local_action_timeout'},token)).status).toBe(200);
+ await expect(read).rejects.toThrow('local_action_timeout');
+ // Codes it does not know still read as a failed action.
+ const click=driver.pointer('left_click',{type:'ref',ref:'ref_1'});
+ const next=(await post(bridge,'poll',{},token)).value.command;
+ await post(bridge,'result/'+next.id,{error:'something_else'},token);
+ await expect(click).rejects.toThrow('local_browser_action_failed');
+ const again=driver.readPage({filter:'interactive'});
+ const last=(await post(bridge,'poll',{},token)).value.command;
+ await post(bridge,'result/'+last.id,{value:'[ref_1] link "Issues" — visible at (132,521) window points'},token);
+ expect(await again).toContain('Issues');
+});
+
 it('keeps a capture-only Mac capture-only',async()=>{
  const {bridge,id}=await connected(false);
  expect(bridge.status('owner',id)).toMatchObject({mode:'desktop',control:false});

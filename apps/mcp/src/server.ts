@@ -392,6 +392,7 @@ function toolFailure(error: unknown, tool: ToolName, args: Record<string, unknow
     public_https_url_required: 'This route opens only public https:// URLs. A local development server (http or https on localhost, 127.0.0.1, [::1], *.localhost or *.test, any port) records only in Toru for Chrome: pass localConnectionId of a ready Chrome from extension_devices. Other private addresses (10.x, 192.168.x, .internal, file:) are never opened. Nothing was recorded or charged.',
     navigation_blocked: 'Navigation was refused by the network or session policy. Adding arbitrary origins does not resolve a private-network refusal.',
     browser_execution_failed: 'The browser could not execute this operation.',
+    local_action_timeout: 'The Mac app being recorded did not answer this step in time (it was busy, loading or laying out). The recording and the share continue. The step may still land late: call browser_observe and check the screen before acting again; do not repeat the action blindly.',
     element_disabled: 'No click was dispatched: the control is disabled. Observe the page, complete missing input or wait for loading, then verify it is enabled before clicking.',
     observation_not_found: 'This screenshot is not available in the current recording. Observe again, verify the result and use the returned observationId.',
     observation_requires_result: 'observationId is only supported for result moments. setup/action classify the last interaction.',

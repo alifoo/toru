@@ -148,9 +148,14 @@ export async function startRecorder(overrides:RecorderOverrides={}){
   // Agents record in the user's Chrome (Toru for Chrome) or on their Mac; Toru's own browser is opt-in (HOSTED_BROWSER_ENABLED=1).
   server=createMcpServer({hostedBrowser:process.env.HOSTED_BROWSER_ENABLED==='1',...(localBrowser?{localBrowser}:{}),...(extension?{extension}:{}),recorder:api,dataDir,publicUrl,...(overrides.oauth?{oauth:overrides.oauth}:{}),...(adminKey?{adminKey}:{}),...(overrides.httpExtension?{httpExtension:overrides.httpExtension}:{}),downloadSecret:key.toString('base64url')});
   // A Toru for Chrome recording uploads in one request: up to 256 MB (five minutes at 1440p), so 6 Mbps of upload
-  // finishes in time. Headers still have 10 s and an idle socket 30 s.
+  // finishes in time. Headers still have 10 s.
   server.requestTimeout=600_000;
   server.headersTimeout=10_000;
+  // A tool call answers with one JSON body when it is done, so its socket is silent until then. At 30 s idle Node closed
+  // it and the proxy answered a bare 502: a click on a Mac (the click, then reading Linear's window) ran past that and
+  // the agent never got the result or the error (2026-11-08). Each Mac step answers within 45 s; a click and its
+  // observation are a few steps.
+  server.timeout=120_000;
   await new Promise<void>((done,fail)=>{
    const onError=(error:Error)=>fail(error);
    server!.once('error',onError);
