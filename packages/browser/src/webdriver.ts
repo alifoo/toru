@@ -158,6 +158,8 @@ export function underlinePoint(box: Box, progress: number): Point {
   return { x: Math.round(box.x + box.width * minimumJerk(progress)), y: Math.round(box.y + box.height + 6) };
 }
 
+/** How long a sweep rests on each row, and how long it takes to slide to the next. */
+const sweepRestMs = 420, sweepGlideMs = 280;
 /** Labels of the presses that change state, before which a presenter hesitates (docs/gestos-humanos.md). */
 const committingLabel = /(?:^|\s)(?:criar|enviar|ativar|publicar|confirmar|salvar|lançar|create|send|activate|publish|confirm|save|launch|submit)\b/iu;
 
@@ -2185,16 +2187,18 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       } else {
         // Down the left third of each row, where its name usually is, stopping on each one.
         const along = (row: Box): Point => inside({ x: Math.round(row.x + Math.min(row.width / 3, 240)), y: Math.round(row.y + row.height / 2) });
+        // Slow enough to read: at 150ms a stop the first Notion demo swept four steps in under a second and the
+        // video showed the cursor only on the first one.
         await this.movePointerTo(element, along(rows[0]!));
         for (const row of rows.slice(1)) {
           const from = this.pointerAt!, to = along(row);
-          await delay(150);
-          await this.glidePointer(150, progress => {
+          await delay(sweepRestMs);
+          await this.glidePointer(sweepGlideMs, progress => {
             const eased = minimumJerk(progress);
             return { x: Math.round(from.x + (to.x - from.x) * eased), y: Math.round(from.y + (to.y - from.y) * eased) };
           });
         }
-        await delay(150);
+        await delay(sweepRestMs);
         const top = Math.min(...rows.map(row => row.y)), bottom = Math.max(...rows.map(row => row.y + row.height));
         const left = Math.min(...rows.map(row => row.x)), right = Math.max(...rows.map(row => row.x + row.width));
         box = { x: left, y: top, width: right - left, height: bottom - top };
@@ -2270,7 +2274,10 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
     direction: ScrollDirection,
     amount: number,
   ): Promise<void> {
-    const steps = Math.min(10, Math.max(1, amount)) * 100;
+    // Two callers, two units: the computer-use toolset sends wheel ticks (1–10, 100px each), the recorder's
+    // browser_scroll and browser_read send pixels (300–600 a reading step). Read as ticks, every 300–600px step became
+    // 1000px and a 700px read scrolled twice as far as asked; anything above 10 is pixels.
+    const steps = amount > 10 ? Math.min(3_000, Math.round(amount)) : Math.max(1, amount) * 100;
     const deltaX = direction === "left" ? -steps : direction === "right" ? steps : 0;
     const deltaY = direction === "up" ? -steps : direction === "down" ? steps : 0;
     const animated = await this.executeScript("smooth_scroll_by", smoothScrollScript,
