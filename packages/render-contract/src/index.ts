@@ -1056,7 +1056,71 @@ export function proposeZoomRegions(
   // A zoom cut down to a moment (a click that navigates at once) only twitches the camera in and straight back out.
   const shortest = directed ? minimumShotMs : 0;
   const lasting = regions.filter(region => region.endMs - region.startMs > shortest || region.intent === "result");
-  return directed ? paceZooms(lasting, removable) : lasting;
+  return directed ? keepCameraStillOnClicks(paceZooms(lasting, removable), ordered, durationMs, removable) : lasting;
+}
+
+/**
+ * No camera move is under way when a click lands, the rule `reviewCamera` holds every directed take to.
+ *
+ * A gesture or the result is framed from the moment it was marked, and the camera sets off `cameraLeadMs` earlier:
+ * marked right after a click (the result an agent marks on the screenshot its "Create" click returned, a point made
+ * just after choosing a status), that approach crossed the press. Every take of 08/11/2026 came back camera_late for
+ * it. Such a region now starts once the click is over; a release that would cross a later click ends earlier. A click's
+ * own shot that would have to start after its click is dropped: that click is filmed in the shot around it.
+ */
+function keepCameraStillOnClicks(
+  regions: readonly ProposedZoomRegion[],
+  pointers: readonly CapturePointer[],
+  durationMs: number,
+  removable: readonly TimeRange[] = [],
+): ProposedZoomRegion[] {
+  const clicks = pointers.filter(pointer => pointer.shape !== "text").map(pointer => pointer.atMs).sort((a, b) => a - b);
+  // A move clears a click when it ends 250 ms before it or starts 100 ms after it (reviewCamera's margins), plus a beat.
+  const before = 300, after = 150;
+  const crosses = (startMs: number, endMs: number, at: number) => startMs < at + after && endMs > at - before;
+  const essential = (region: ProposedZoomRegion) =>
+    region.intent === "result" || region.intent === "type" || region.intent === "emphasis";
+  let kept = [...regions].map(region => ({ ...region })).sort((a, b) => a.startMs - b.startMs);
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    const next: ProposedZoomRegion[] = [];
+    for (const [index, region] of kept.entries()) {
+      // Its own clicks come after its start; a click before the start that the approach (or a pan into it) crosses
+      // pushes it later.
+      for (const at of clicks) {
+        if (at >= region.startMs) break;
+        if (crosses(region.startMs - cameraLeadMs, region.startMs, at)) { region.startMs = at + after + cameraLeadMs; changed = true; }
+      }
+      // Pushed later, it may now open a moment after the shot before: the camera holds through instead of pumping.
+      const previous = next.at(-1);
+      if (previous && region.startMs > previous.endMs
+        && region.startMs - previous.endMs - cutBetween(removable, previous.endMs, region.startMs) < openBetweenZoomsMs) {
+        previous.endMs = region.startMs;
+      }
+      if (region.intent === "result" && index === kept.length - 1) region.endMs = Math.max(region.endMs, finalResultEndMs(region.startMs, durationMs));
+      const following = kept[index + 1];
+      if (following !== undefined && following.startMs <= region.endMs + 1) region.endMs = Math.min(region.endMs, following.startMs);
+      const handsOn = following !== undefined && following.startMs <= region.endMs + 1;
+      if (!handsOn) {
+        for (const at of clicks) {
+          if (at <= region.startMs || !crosses(region.endMs, region.endMs + cameraReleaseMs, at)) continue;
+          // A click at the end of the shot keeps the camera in until it is over; one after it, out before it.
+          region.endMs = at <= region.endMs + after ? at + after : at - before - cameraReleaseMs;
+          if (following !== undefined) region.endMs = Math.min(region.endMs, following.startMs);
+          changed = true;
+        }
+      }
+      const tooShort = region.endMs - region.startMs < (essential(region) ? 400 : minimumShotMs);
+      const ownClickMissed = !essential(region) && !clicks.some(at => at >= region.startMs && at <= region.endMs);
+      if (region.endMs > durationMs || tooShort || ownClickMissed) {
+        if (region.intent !== "result") { changed = true; continue; }
+      }
+      next.push(region);
+    }
+    kept = next;
+    if (!changed) break;
+  }
+  return kept;
 }
 
 /** The labels of clicks that only move a flow on, as the driver describes them ("button Próximo", "link Back ›"). */
