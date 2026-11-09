@@ -423,7 +423,9 @@ export const openScreenDefaults = {
  */
 const preset = {
   ...openScreenDefaults,
-  cursorScale: 2.4,
+  // About the size the system pointer has on a 1080p recording. At 2.4 it read as a pointer pasted on top of the
+  // page, the first thing the eye found in every landing demo (09/11/2026).
+  cursorScale: 1.6,
   shadowIntensity: 0.45,
   showBlur: false,
   motionBlurAmount: 0,
