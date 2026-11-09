@@ -1,7 +1,7 @@
 export const plans = [
- {id:'free',name:'Free',price:0,use:'Try your first workflows.',credits:10,minutes:2,days:7},
- {id:'creator',name:'Creator',price:19,use:'Record and share regularly.',credits:50,minutes:5,days:30},
- {id:'studio',name:'Studio',price:49,use:'For a larger recording workload.',credits:150,minutes:5,days:30},
+ {id:'free',name:'Free',price:0,use:'Try your first workflows.',credits:10,minutes:5,days:7},
+ {id:'creator',name:'Creator',price:19,use:'Record and share regularly.',credits:50,minutes:10,days:30},
+ {id:'studio',name:'Studio',price:49,use:'For a larger recording workload.',credits:150,minutes:20,days:30},
 ] as const;
 /** One-off credit packs. PLACEHOLDER prices until the Stripe products exist; shown only behind NEXT_PUBLIC_CREDIT_PACKS_ENABLED. */
 export const creditPacks = [
