@@ -81,7 +81,7 @@ export function Brands() {
   const b=editing?.brand??empty;
   const accent=b.accent??'#405f6d',padding=b.padding??30,radius=b.radius??12,scale=1-(padding/100)*0.4;
   const custom=b.background?.startsWith('#')?b.background:undefined;
-  const zoomOn=b.zoom?.enabled!==false,zoomScale=b.zoom?.scale??1.6,smooth=b.cursor?.smooth!==false;
+  const zoomOn=b.zoom?.enabled!==false,zoomScale=b.zoom?.scale??2,smooth=b.cursor?.smooth!==false;
   if(brands===null&&!error)return <p className="sx-loading" role="status">Loading your settings…</p>;
   return <div className="sx">
     <nav className="sx-products" aria-label="Products">

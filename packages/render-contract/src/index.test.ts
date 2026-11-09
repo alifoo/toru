@@ -1186,10 +1186,12 @@ describe("brand camera and cursor", () => {
     expect(buildExporterConfig(directed, { zoom: false }).zoomRegions).toEqual([]);
   });
 
-  it("caps every shot at the brand's zoom and can let a directed camera in past its usual 1.6", () => {
-    expect(Math.max(...scales(buildExporterConfig(directed)))).toBeLessThanOrEqual(1.6);
+  it("caps every shot at the brand's zoom and can let a directed camera in past its usual 2", () => {
+    expect(Math.max(...scales(buildExporterConfig(directed)))).toBeLessThanOrEqual(2);
+    // Small targets get the deeper default, not the old 1.6.
+    expect(Math.max(...scales(buildExporterConfig(directed)))).toBeGreaterThan(1.6);
     expect(Math.max(...scales(buildExporterConfig(directed, { zoomScale: 1.3 })))).toBeLessThanOrEqual(1.3);
-    expect(Math.max(...scales(buildExporterConfig(directed, { zoomScale: 2.4 })))).toBeGreaterThan(1.6);
+    expect(Math.max(...scales(buildExporterConfig(directed, { zoomScale: 2.4 })))).toBeGreaterThan(2);
   });
 
   it("keeps the recorded cursor path when smoothing is off", () => {
@@ -1397,6 +1399,33 @@ describe("camera review", () => {
     expect(zooms.at(-1)!.endMs).toBeLessThanOrEqual(32_000 - 1_016);
   });
 
+  it("ends on the result's hold and a still wide shot when the agent circles the evidence after marking it", () => {
+    // Linear, 09/11/2026: the result marked on the screenshot after "Create issue", then the new row circled and the
+    // cursor parked. The circle made the result look like it was not the last moment: no final hold, the circle and
+    // the park played in the cut-up tail as quick jumps.
+    const pointers = [click(4_000, { x: 0.2, y: 0.3 }), click(20_000, { x: 0.66, y: 0.35 })];
+    const capture = { width: 1920, height: 1080, frameRate: 30, durationMs: 40_000, pointerTrail: pointers,
+      pointerTelemetry: [], directed: true,
+      stillRanges: [{ startMs: 27_000, endMs: 40_000 }],
+      semanticTimeline: [
+        { type: "click" as const, atMs: 20_000, ref: null, element: "button Create issue" },
+        { type: "result" as const, atMs: 20_500, ref: null, element: "TOR-19", focus: { x: 0, y: 0.33, width: 0.6, height: 0.4 } },
+        { type: "emphasis" as const, atMs: 21_500, endMs: 24_500, ref: null, element: "trace circle TOR-19", focus: { x: 0.05, y: 0.64, width: 0.12, height: 0.03 } },
+      ] };
+    const config = buildExporterConfig(capture, { compressPauses: true });
+    const zooms = config.zoomRegions as Array<{ intent?: string; startMs: number; endMs: number }>;
+    // One shot holds the payoff through the circle, and nothing zooms after it.
+    expect(zooms.at(-1)!.intent).toBe("result");
+    expect(zooms.at(-1)!.endMs).toBeGreaterThanOrEqual(25_500);
+    // The tail after the wide ending is cut, so the park and the idle cursor never play.
+    const end = zooms.at(-1)!.endMs + 1_016 + 1_200;
+    expect(config.trimRegions).toContainEqual(expect.objectContaining({ endMs: 40_000 }));
+    const finalCut = (config.trimRegions as Array<{ startMs: number; endMs: number }>).find(trim => trim.endMs === 40_000)!;
+    expect(finalCut.startMs).toBeLessThanOrEqual(end);
+    expect(finalCut.startMs).toBeGreaterThanOrEqual(zooms.at(-1)!.endMs + 1_016);
+    expect(reviewCamera(config, capture)).toEqual([]);
+  });
+
   it("does not count a release between two zooms the camera holds through", () => {
     const clickAt = { pointerTrail: [click(5_200)], directed: true };
     // The first zoom hands straight on to the second, which arrives before the click: no camera move at 5.2 s.
@@ -1428,7 +1457,7 @@ describe("gesture camera", () => {
     const regions = proposeZoomRegions([], 20_000, [], [gesture(5_000, { x: 0.4, y: 0.4, width: 0.2, height: 0.1 })], true);
     expect(regions).toHaveLength(1);
     expect(regions[0]).toMatchObject({ intent: "emphasis", startMs: 5_000, endMs: 7_500 });
-    expect(regions[0]!.customScale).toBeLessThanOrEqual(1.6);
+    expect(regions[0]!.customScale).toBeLessThanOrEqual(2);
     expect(regions[0]!.focus).toEqual({ cx: 0.5, cy: 0.45 });
   });
 
