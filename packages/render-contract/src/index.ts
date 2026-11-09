@@ -942,6 +942,34 @@ function pointerTravel(
 const followTravelThreshold = 0.15;
 
 /**
+ * The deepest a directed demo's camera goes unless the brand says otherwise ("Deepest zoom" in the console). It was
+ * 1.6: on a 1920-wide layout shown in a landing card, a status menu or a list row at 1.6 stayed too small to read
+ * (Linear demo, 09/11/2026). Each shot still zooms by its target's size, 1.4 for a panel to this for a small control.
+ */
+export const defaultDirectedZoom = 2;
+
+/**
+ * The result that ends the demo: the last result moment, when everything after it is a gesture on the evidence (the
+ * circle an agent draws around the new row after marking it) or a mark. Such a gesture used to make the result look
+ * like it was not the last thing, and the ending lost its hold, release and still wide shot.
+ */
+export function finalResultMoment(timeline: readonly CaptureSemanticAction[]): CaptureSemanticAction | undefined {
+  const ordered = [...timeline].sort((a, b) => a.atMs - b.atMs);
+  let index = -1;
+  for (let at = ordered.length - 1; at >= 0; at--) if (ordered[at]!.type === "result") { index = at; break; }
+  if (index < 0) return undefined;
+  const trailing = ordered.slice(index + 1);
+  return trailing.every(moment => moment.type === "emphasis" || moment.type === "setup" || moment.type === "action")
+    ? ordered[index] : undefined;
+}
+
+/** The last zoom of the ending: the payoff's, or a gesture after it the payoff does not frame. */
+function endingRegion<T extends { startMs: number; endMs: number }>(regions: readonly T[], final: CaptureSemanticAction | undefined): T | undefined {
+  if (!final) return undefined;
+  return regions.filter(region => region.startMs >= final.atMs).sort((a, b) => a.endMs - b.endMs).at(-1);
+}
+
+/**
  * Proposes one region per click, merging those close enough together that separate regions would
  * pull the camera out and back in for no reason.
  */
@@ -952,7 +980,7 @@ export function proposeZoomRegions(
   semanticTimeline: readonly CaptureSemanticAction[] = [],
   directed = false,
   removable: readonly TimeRange[] = [],
-  directedCap = 1.6,
+  directedCap = defaultDirectedZoom,
 ): ProposedZoomRegion[] {
   const ordered = [...pointers].sort((left, right) => left.atMs - right.atMs);
   // A directed demo never zooms on a click that only moves the flow on ("Próximo", a link to the next page), and the
@@ -1022,7 +1050,7 @@ export function proposeZoomRegions(
         focus: { cx: x + width / 2, cy: y + height / 2 }, focusMode: "manual", source: "auto", intent: "type", element: moment.element });
     }
     // A gesture the agent made on purpose (pointing at, circling, underlining or sweeping something) is framed on its
-    // element from the travel there to a second after it ends. Subtle, at most 1.6×; a quarter of the screen or more is
+    // element from the travel there to a second after it ends. At most the directed cap (2× by default); a quarter of the screen or more is
     // already readable in the wide shot (docs/gestos-humanos.md).
     for (const moment of semanticTimeline) {
       if (moment.type !== "emphasis" || moment.endMs === undefined || !moment.focus) continue;
@@ -1055,12 +1083,21 @@ export function proposeZoomRegions(
       const step = moving.find(pointer => pointer.atMs > region.startMs && pointer.atMs < region.endMs + cameraReleaseMs + 400);
       if (step) region.endMs = Math.min(region.endMs, Math.max(region.startMs, step.atMs - cameraReleaseMs - 400));
     }
-    const last = [...semanticTimeline].sort((a, b) => a.atMs - b.atMs).at(-1);
-    if (last?.type === "result") {
-      const region = regions.find(r => r.intent === "result" && r.startMs === last.atMs);
+    const final = finalResultMoment(semanticTimeline);
+    const region = final && regions.find(r => r.intent === "result" && r.startMs === final.atMs);
+    if (final && region) {
+      // A gesture on the evidence after the result (the circle around the new row) is filmed in the payoff's own shot
+      // when that shot shows it: one hold, not a quick cut to the result and a pan to the gesture.
+      const reach = 0.5 / Math.max(1, region.customScale);
+      const framed = (other: ProposedZoomRegion) => other.intent === "emphasis" && other.startMs >= final.atMs
+        && Math.abs(other.focus.cx - region.focus.cx) <= reach && Math.abs(other.focus.cy - region.focus.cy) <= reach;
+      const gestures = regions.filter(framed);
+      const gesturesEnd = Math.max(0, ...gestures.map(other => other.endMs));
+      for (const other of gestures) regions.splice(regions.indexOf(other), 1);
       // A demo never ends on a zoom: the payoff is held, then the camera comes back out and the last frames are a
       // still wide shot. A capture stopped too soon after the result gets a shorter hold, never a cropped ending.
-      if (region) region.endMs = finalResultEndMs(region.startMs, durationMs);
+      const latest = durationMs - cameraReleaseMs - wideEndingMs;
+      region.endMs = Math.max(finalResultEndMs(region.startMs, durationMs), Math.min(latest, gesturesEnd));
     }
   }
   for (let i = 1; i < regions.length; i++) {
@@ -1630,7 +1667,8 @@ export function buildExporterConfig(
       { startMs: region.endMs - 100, endMs: region.endMs + cameraReleaseMs + 50 },
     ]);
     // The wide shot that ends the video is a still picture on purpose: it is never cut as a pause.
-    const payoff = zoomRegions.filter(region => region.intent === "result").at(-1);
+    const payoff = endingRegion(zoomRegions, finalResultMoment(observation.semanticTimeline ?? []))
+      ?? zoomRegions.filter(region => region.intent === "result").at(-1);
     if (payoff) transitions.push({ startMs: payoff.endMs - 100, endMs: payoff.endMs + cameraReleaseMs + wideEndingMs + 50 });
     for (const span of subtractRanges(removable, [...transitions, ...clickReserves])) {
       if (span.endMs - span.startMs >= minimumCutMs) directedCuts.push({ id: `still-${directedCuts.length}`, ...span });
@@ -1645,11 +1683,12 @@ export function buildExporterConfig(
     }
   }
   if (cutting) {
-    const last = [...(observation.semanticTimeline ?? [])].sort((a, b) => a.atMs - b.atMs).at(-1);
-    // The ending is kept up to the wide shot after the result's zoom: hold, release, then `wideEndingMs` of still.
-    const payoff = zoomRegions.filter(region => region.intent === "result").at(-1);
-    const keepUntil = last?.type === "result"
-      ? (payoff ? payoff.endMs + cameraReleaseMs + wideEndingMs : last.atMs + 4_000)
+    const final = finalResultMoment(observation.semanticTimeline ?? []);
+    // The ending is kept up to the wide shot after the result's zoom (or a gesture after it): hold, release, then
+    // `wideEndingMs` of still.
+    const payoff = endingRegion(zoomRegions, final);
+    const keepUntil = final
+      ? (payoff ? payoff.endMs + cameraReleaseMs + wideEndingMs : final.atMs + 4_000)
       : undefined;
     if (keepUntil !== undefined && keepUntil + 250 < observation.durationMs) {
       directedCuts.push({ id: 'final-hold', startMs: keepUntil, endMs: observation.durationMs });
