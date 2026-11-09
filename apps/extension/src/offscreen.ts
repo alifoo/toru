@@ -108,40 +108,70 @@ let session: Session | undefined;
 detachListeners.add((tabId) => { if (session?.tabId === tabId) session.closed = true; });
 
 function channelFor(tabId: number): DebuggerChannel {
-  // A rendered frame (Page.captureScreenshot) briefly resizes the view to the emulated viewport, which can
-  // swallow a mouse press. A press waits for the frame in flight, and frames wait until its release.
+  // A rendered frame (Page.captureScreenshot) briefly re-renders the view at the emulated device scale. Any mouse
+  // event Chrome receives meanwhile is mapped through the screen's own scale instead: on a 1x display at a 4/3 capture
+  // scale a move or press aimed at (372, 372) lands at (279, 279), on a 2x display at 1.5 times the point. A click
+  // then opens the wrong row or none at all, and the hover the recording shows wanders. So no mouse event is sent while
+  // a frame is in flight, and no frame starts while a mouse event is in flight or a button is held.
   //
   // Neither side waits for ever: Chrome can hold a screenshot of a page that is not painting (a static consent
   // screen, a window another one covers), and an unbounded wait there hung the click behind it until the server
   // gave the browser up. A press that fails never sends its release, so it clears the flag itself.
-  let capturing: Promise<unknown> | undefined, pressed = false, releasedAt = 0;
+  let capturing: Promise<unknown> | undefined, inputting: Promise<unknown> | undefined, observing: Promise<unknown> | undefined;
+  let pressed = false, releasedAt = 0;
   const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
   const send = async (method: string, params: Record<string, unknown> = {}) => {
-    if (method === 'Input.dispatchMouseEvent' && (params.type === 'mousePressed' || params.type === 'mouseReleased')) {
+    if (method === 'Input.dispatchMouseEvent') {
       if (params.type === 'mousePressed') pressed = true;
-      await Promise.race([capturing?.catch(() => undefined), pause(1_500)]);
+      // Each event waits for the frame in flight, then claims the channel before its own await, so a frame that
+      // starts later sees it.
+      let release!: () => void;
+      const previous = inputting;
+      const mine = new Promise<void>((done) => { release = done; });
+      inputting = mine;
       let failed = false;
-      try { return await worker('send', { tabId, method, params }); }
+      try {
+        await Promise.race([Promise.all([capturing?.catch(() => undefined), previous]), pause(1_500)]);
+        return await worker('send', { tabId, method, params });
+      }
       catch (error) { failed = true; throw error; }
-      finally { if (params.type === 'mouseReleased' || failed) { pressed = false; releasedAt = Date.now(); } }
+      finally {
+        release();
+        if (inputting === mine) inputting = undefined;
+        if (params.type === 'mouseReleased' || (failed && params.type === 'mousePressed')) { pressed = false; releasedAt = Date.now(); }
+      }
     }
     if (method === 'Page.captureScreenshot' && params.optimizeForSpeed) {
       const waitingSince = Date.now();
-      while ((pressed || Date.now() - releasedAt < 60) && Date.now() - waitingSince < 2_000) await pause(15);
+      while ((pressed || inputting || observing || Date.now() - releasedAt < 60) && Date.now() - waitingSince < 2_000) {
+        const busy = inputting ?? observing;
+        if (busy) await Promise.race([busy.catch(() => undefined), pause(250)]); else await pause(15);
+      }
       capturing = Promise.race([worker('send', { tabId, method, params }),
         pause(5_000).then(() => { throw new Error('screenshot_timeout'); })]);
       return await capturing;
     }
     if (method === 'Page.captureScreenshot') {
-      // The navigator's observation. Bounded too: a page that stops painting (a window another one covers) held it, and
-      // every call behind it, until the server gave the command up 45 s later. Brought to the front, it paints again.
+      // The navigator's observation. Two screenshots at once render the view at two scales, and the observation came
+      // back zoomed into a corner: it waits for the recording's frame in flight, and holds the next one until it is done.
+      // Bounded too: a page that stops painting (a window another one covers) held it, and every call behind it, until
+      // the server gave the command up 45 s later. Brought to the front, it paints again.
       const once = () => Promise.race([worker('send', { tabId, method, params }),
         pause(8_000).then(() => { throw new Error('screenshot_timeout'); })]);
-      try { return await once(); }
-      catch (error) {
-        if ((error as Error).message !== 'screenshot_timeout') throw error;
-        await worker('send', { tabId, method: 'Page.bringToFront', params: {} }).catch(() => undefined);
-        return await once();
+      let release!: () => void;
+      const mine = new Promise<void>((done) => { release = done; });
+      observing = mine;
+      try {
+        await Promise.race([capturing?.catch(() => undefined), pause(1_500)]);
+        try { return await once(); }
+        catch (error) {
+          if ((error as Error).message !== 'screenshot_timeout') throw error;
+          await worker('send', { tabId, method: 'Page.bringToFront', params: {} }).catch(() => undefined);
+          return await once();
+        }
+      } finally {
+        release();
+        if (observing === mine) observing = undefined;
       }
     }
     return worker('send', { tabId, method, params });
