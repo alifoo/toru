@@ -1291,6 +1291,14 @@ describe("camera review", () => {
     expect(together).toHaveLength(1);
   });
 
+  it("does not count a release between two zooms the camera holds through", () => {
+    const clickAt = { pointerTrail: [click(5_200)], directed: true };
+    // The first zoom hands straight on to the second, which arrives before the click: no camera move at 5.2 s.
+    expect(reviewCamera({ zoomRegions: [{ startMs: 1_000, endMs: 4_100 }, { startMs: 4_100, endMs: 8_000 }] }, clickAt)).toEqual([]);
+    // Released for real, the camera would still be moving when the click lands.
+    expect(reviewCamera({ zoomRegions: [{ startMs: 1_000, endMs: 4_500 }] }, clickAt)).toEqual(["camera_late"]);
+  });
+
   it("flags zooms that pump out and back in or crowd a minute", () => {
     const quiet = { pointerTrail: [], directed: true };
     expect(reviewCamera({ zoomRegions: [{ startMs: 1_000, endMs: 4_000 }, { startMs: 5_000, endMs: 8_000 }] }, quiet))

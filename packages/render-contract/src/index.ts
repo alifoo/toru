@@ -1704,10 +1704,16 @@ export function reviewCamera(
       && typeof (region as { startMs?: unknown }).startMs === "number" && typeof (region as { endMs?: unknown }).endMs === "number")
     .sort((a, b) => a.startMs - b.startMs);
   const reasons: string[] = [];
-  const moves = regions.flatMap(region => [
-    { startMs: region.startMs - cameraLeadMs, endMs: region.startMs },
-    { startMs: region.endMs, endMs: region.endMs + cameraReleaseMs },
-  ]);
+  // A zoom handed straight to the next one (the camera holds in and pans) is never released: counting a release there
+  // put a phantom camera move on the next zoom's click and held good takes back as camera_late.
+  const moves = regions.flatMap((region, index) => {
+    const next = regions[index + 1];
+    const handedOn = next !== undefined && next.startMs <= region.endMs + 1;
+    return [
+      { startMs: region.startMs - cameraLeadMs, endMs: region.startMs },
+      ...(handedOn ? [] : [{ startMs: region.endMs, endMs: region.endMs + cameraReleaseMs }]),
+    ];
+  });
   const late = (observation.pointerTrail ?? []).some(pointer => pointer.shape !== "text"
     && moves.some(move => move.startMs < pointer.atMs + 100 && move.endMs > pointer.atMs - 250));
   if (late) reasons.push("camera_late");
