@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { compilePlan, lacksAttention, planSchema, planValues } from './run-plan.js';
 import { viewportSchema } from './viewport.js';
 import { privacySchema } from './privacy.js';
+import { recordingWindowHidden } from './window-visibility.js';
 import type { AuthorizationCheck } from './lifecycle.js';
 import type { RecorderDatabase } from './store/database.js';
 
@@ -56,7 +57,9 @@ type Run = Checkpoint & { id: string; owner: string; requestId: string; inputHas
   /** While agent_driving: what the plan must end on, when the agent last called a tool on the session, and how the run hears it finished. */
   finalState?: string; lastAgentAt?: number; finish?: (outcome: AgentOutcome) => void;
   /** The plan asked for a presentation: the driving instruction says to make its attention steps. */
-  presentation?: boolean };
+  presentation?: boolean;
+  /** The last page call on the session found Chrome not drawing the recording window (recording_window_hidden). */
+  windowHidden?: boolean };
 type Call = (owner: string, name: string, args: unknown, authorize?: AuthorizationCheck) => Promise<CallToolResult>;
 export type RunStore = { artifactDir(owner: string, sessionId: string): Promise<string> };
 const reply = (data: Record<string, unknown>): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data });
@@ -125,12 +128,13 @@ export class RunController {
           instruction: 'The Toru navigator needs a field value. Choose it from the user goal and call navigation_guide with the session id, this inputId and the value. Never send passwords or tokens.' }
       : run.state === 'agent_driving' && run.sessionId
       ? { nextCall: { name: 'browser_observe', arguments: { id: run.sessionId } }, agentDriving: true,
+          ...(run.windowHidden ? { warning: recordingWindowHidden } : {}),
           ...(run.finalState ? { finalState: run.finalState } : {}),
           ...(run.handoff ? { handoff: { from: run.handoff, ...(run.navigationReason ? { reason: run.navigationReason } : {}), ...(run.lastPage ? { lastPage: run.lastPage } : {}) } } : {}),
           instruction: `${run.handoff ? `The Toru navigator stopped short (${run.handoff}) and the capture is still running: you take over from the current screen. ` : 'You drive this recording: the capture is running. '}Follow your plan one action at a time with browser_observe, browser_click, browser_type, browser_key, browser_scroll, browser_select and browser_wait on sessionId, inspecting each returned screenshot before the next action.${run.presentation ? ' This is a presentation: on each content screen, make the plan\'s attention steps (browser_point, browser_trace, browser_sweep, browser_highlight) before moving on, never on transition screens.' : ''} When finalState is visible, call mark_demo_moment kind result with that screenshot's observationId, then recording_run_finish {runId, outcome:"reached"}: Toru holds on the result, stops, renders and checks the video. If the flow cannot be completed, call recording_run_finish with outcome:"stuck". Without recording_run_finish in your tool list, recording_stop on sessionId finishes the run as reached. Never call recording_render for this session. After ${Math.round((run.handoff ? this.handoffIdleMs : this.agentIdleMs) / 60_000)} minutes without a call on the session the run stops.` }
       : active ? { nextCall: { name: 'recording_run_status', arguments: { runId: run.id, waitMs: 25000 } }, instruction: 'The run continues on the server. Keep calling recording_run_status (waits up to 25 seconds); do not open sessions or record manually meanwhile.' }
       : run.state === 'done' && run.sessionId ? { nextCall: { name: 'recording_links', arguments: { id: run.sessionId } }, instruction: 'The demo passed the delivery check. Call recording_links with the session id and give the user the video link.' }
-      : run.state === 'needs_review' && run.sessionId ? { nextCall: { name: 'recording_status', arguments: { id: run.sessionId } }, instruction: `The video failed the delivery check (${(run.qualityReasons ?? []).join(', ')}); it was not delivered and no credit was used. Start a new run with a corrected flow, or call recording_render with acceptReview:true on the session id if the user wants it anyway.` }
+      : run.state === 'needs_review' && run.sessionId ? { nextCall: { name: 'recording_status', arguments: { id: run.sessionId } }, instruction: `The video failed the delivery check (${(run.qualityReasons ?? []).join(', ')}); it was not delivered and no credit was used. ${run.qualityReasons?.includes('capture_stalled') ? 'capture_stalled: Chrome stopped drawing the recording window (hidden, minimized, covered or on another desktop/workspace) while the flow went on, so part of it is missing or frozen in the video. Ask the user to keep the Toru window visible and record again. ' : ''}Start a new run with a corrected flow, or call recording_render with acceptReview:true on the session id if the user wants it anyway.` }
       : run.sessionId ? { nextCall: { name: 'recording_status', arguments: { id: run.sessionId } }, instruction: 'The run stopped before delivery. Check recording_status for the session: a captured session can still be rendered with recording_render; otherwise start a new run.' } : {};
     return reply({ runId: run.id, requestId: run.requestId, status: run.state, ...(run.sessionId ? { sessionId: run.sessionId } : {}), ...(run.connectionId ? { connectionId: run.connectionId } : {}), ...(run.reason ? { reason: run.reason } : {}),
       ...(run.navigationReason ? { navigationReason: run.navigationReason } : {}), ...(run.lastPage ? { lastPage: run.lastPage } : {}),
@@ -182,7 +186,14 @@ export class RunController {
         driving.lastAgentAt = Date.now();
         if (AGENT_ACTIONS.has(name)) { driving.actions++; this.persist(driving); }
       }
-      const result = await (authorize ? this.recorder.call(owner, name, raw, authorize) : this.recorder.call(owner, name, raw));
+      // Whether Chrome is drawing the recording window, as the last page call on a driving session found it.
+      const sawWindow = (hidden: boolean) => {
+        if (driving && (name.startsWith('browser_') || name === 'mark_demo_moment')) driving.windowHidden = hidden;
+      };
+      let result: CallToolResult;
+      try { result = await (authorize ? this.recorder.call(owner, name, raw, authorize) : this.recorder.call(owner, name, raw)); }
+      catch (error) { if (error instanceof Error && error.message === recordingWindowHidden.code) sawWindow(true); throw error; }
+      sawWindow((result.structuredContent as { warning?: { code?: unknown } } | undefined)?.warning?.code === recordingWindowHidden.code);
       // An answered field puts the run back to navigating at once; its own poll may wait up to 25 s to notice.
       const inputId = (raw as { inputId?: unknown } | null)?.inputId;
       if (name === 'navigation_guide' && !result.isError && typeof id === 'string' && typeof inputId === 'string') {

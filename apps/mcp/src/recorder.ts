@@ -25,7 +25,8 @@ import {
 } from '@content-layer/browser';
 import type { BrowserRefDriver } from '@content-layer/browser';
 import { backgroundCatalog, buildExporterConfig, pointerIdleRanges, redactionIntervals, type CaptureLayers, type CaptureObservation, type IdentitySighting } from '@content-layer/render-contract';
-import { detectStillRanges } from './stills.js';
+import { detectCaptureGaps, detectStillRanges } from './stills.js';
+import { recordingWindowHidden, type PageVisibility } from './window-visibility.js';
 import { viewportOf } from './viewport.js';
 import { DemoAccountStore, demoOrigin } from './store/demo-accounts.js';
 import { BrandStore, type Brand } from './store/brands.js';
@@ -53,6 +54,13 @@ export type Driver = BrowserContextDriver & BrowserRefDriver & {
   desktopWindow?: DesktopWindow;
   recordingMode?: 'screencast' | 'poll' | null;
   recordingStartedAtMs?: number | null;
+  /**
+   * Toru for Chrome (0.1.16 on): whether the recorded page was drawing at the last command's check. Chrome stops
+   * drawing a window that is hidden, minimized, covered or on another desktop; nothing done there is recorded.
+   */
+  pageVisibility?: PageVisibility;
+  /** Toru for Chrome: where the page reported it was not drawing while recording (CaptureObservation.hiddenRanges). */
+  hiddenRanges?(): Array<{ startMs: number; endMs: number }>;
   recordingDurationMs?: number;
   connectWithCredentials(username: string, password: string | undefined, signal: AbortSignal, targetUrl?: string): Promise<void>;
   /** Finishes a sign-in paused at a one-time code or magic link. */
@@ -172,6 +180,7 @@ export type RecorderOptions = {
   makeGif?: typeof makeGif;
   redactRegions?: typeof redactRegions;
   detectStills?: typeof detectStillRanges;
+  detectCaptureGaps?: typeof detectCaptureGaps;
 };
 
 /** One heavy task at a time; reservations persist before resource allocation, including failures. */
@@ -754,7 +763,22 @@ export class Recorder {
       }
     })();
     active.inFlight = action;
-    return action;
+    return action.then(result => this.withVisibility(active, name, result));
+  }
+  /**
+   * Says so in the reply when the last command found Chrome not drawing the recording window. A page action that ran
+   * then is missing from the video and the delivery check will hold the take; Toru for Chrome refuses the next ones
+   * (recording_window_hidden) until the window is back in view.
+   */
+  private withVisibility(active: Active, name: string, result: CallToolResult): CallToolResult {
+    const state = active.driver.pageVisibility;
+    if (result.isError || (state !== 'hidden' && state !== 'stalled') || active.job.status !== 'recording') return result;
+    if (!name.startsWith('browser_') && name !== 'mark_demo_moment') return result;
+    const ran = !['browser_observe', 'browser_wait', 'mark_demo_moment'].includes(name);
+    const warning = { ...recordingWindowHidden,
+      ...(ran ? { actionMissed: true, message: `${recordingWindowHidden.message} This action ran while the window was not drawn, so it is missing from the video and the delivery check will hold this take (capture_stalled): once the window is visible, end the run (recording_run_finish outcome "stuck") and record again.` } : {}) };
+    const data = { ...(result.structuredContent ?? {}), warning };
+    return { ...result, structuredContent: data, content: [{ type: 'text', text: JSON.stringify(data) }, ...result.content.slice(1)] };
   }
   private endIdle(active: Active) {
     if (active.idleSince !== undefined && active.startedAt !== undefined) {
@@ -948,7 +972,7 @@ export class Recorder {
       } : {}),
       ...(!rawAvailable ? {canRetryRender:false,instruction:'The raw capture has expired. Any published MP4 remains available until expiresAt; another render requires a new capture.'} : {}),
       ...(job.status === 'captured' && rawAvailable ? { canRetryRender: true, nextCall: { name: 'recording_render', arguments: { id: job.id } }, instruction: 'The raw capture is preserved. Retry recording_render with this id; do not repeat login or recording.' } : {}),
-      ...(job.status==='captured' && job.qualityReview && !job.qualityReview.passed && !job.qualityReview.accepted ? { needsReview:true, nextCall:{name:'recording_render',arguments:{id:job.id,acceptReview:true}}, instruction:`The rendered video failed the delivery check (${job.qualityReview.reasons.join(', ')}). It was not delivered and no credit was used. Fix the capture (re-record) or, if the user wants it anyway, call recording_render again with acceptReview:true.` } : {}),
+      ...(job.status==='captured' && job.qualityReview && !job.qualityReview.passed && !job.qualityReview.accepted ? { needsReview:true, nextCall:{name:'recording_render',arguments:{id:job.id,acceptReview:true}}, instruction:`The rendered video failed the delivery check (${job.qualityReview.reasons.join(', ')}). It was not delivered and no credit was used. ${job.qualityReview.reasons.includes('capture_stalled')?'capture_stalled: Chrome stopped drawing the recording window (hidden, minimized, covered or on another desktop/workspace) while the flow went on; ask the user to keep the Toru window visible. ':''}Fix the capture (re-record) or, if the user wants it anyway, call recording_render again with acceptReview:true.` } : {}),
       ...(active ? { sessionExpiresAt: new Date(active.openedAt + (active.job.policy?.sessionMs ?? limits.session)).toISOString(), remainingSessionMs: Math.max(0, (active.job.policy?.sessionMs ?? limits.session) - (Date.now() - active.openedAt)) } : {}),
       ...(active?.startedAt ? { remainingRecordingMs: Math.max(0, (active.job.policy?.captureMs ?? limits.recording) - (Date.now() - active.startedAt)) } : {}),
     };
@@ -1294,6 +1318,7 @@ export class Recorder {
             ...observationViewport(active.driver), frameRate: 60, durationMs: active.job.durationMs,
             pointerTrail: active.driver.pointerTrail?.() ?? [], pointerTelemetry: active.driver.pointerTelemetry?.() ?? [],
             semanticTimeline: active.driver.semanticTimeline?.() ?? [],
+            ...(active.driver.hiddenRanges?.().length ? { hiddenRanges: active.driver.hiddenRanges() } : {}),
             // A Mac capture someone drove by hand keeps every moment: the gaps between calls are them working. When
             // Toru operated the window (it left a cursor path), the gaps are the navigator thinking, as on the web.
             ...(active.idleRanges ? { idleRanges: active.driver.capturePrivacy!=='user-approved-desktop' ? active.idleRanges
@@ -1383,6 +1408,13 @@ export class Recorder {
           this.path(job.id, job.rawFile==='raw.mp4'?'raw.mp4':'raw.webm'), observation.durationMs);
         if (stills) observation.stillRanges = stills;
       }
+      // Measured on the raw capture too: where no new frame came, so the delivery check can tell a page that stopped
+      // drawing (a hidden window) from one that held still (capture_stalled).
+      // Only Toru for Chrome keeps one frame per page change; a Mac capture's pacing is its own, so a quiet stretch
+      // there says nothing about a hidden window.
+      const gaps = job.desktopDeviceId ? undefined : await (this.options.detectCaptureGaps ?? detectCaptureGaps)(
+        this.path(job.id, job.rawFile==='raw.mp4'?'raw.mp4':'raw.webm'), observation.durationMs);
+      if (gaps) observation.captureGaps = gaps;
       const config = buildExporterConfig(observation, {
         wallpaper,
         padding,
@@ -1439,8 +1471,8 @@ export class Recorder {
           await writeFile(reviewPath,output,{mode:0o600});
           let verdict:QualityVerdict;
           try {
-            const observation=await readFile(this.path(job.id,'observation.json'),'utf8').then(text=>JSON.parse(text) as CaptureObservation).catch(()=>undefined);
-            verdict=await (this.options.assessQuality ?? assessDemo)(reviewPath,observation,config);
+            const saved=await readFile(this.path(job.id,'observation.json'),'utf8').then(text=>JSON.parse(text) as CaptureObservation).catch(()=>undefined);
+            verdict=await (this.options.assessQuality ?? assessDemo)(reviewPath,saved&&observation.captureGaps?{...saved,captureGaps:observation.captureGaps}:saved,config);
           } finally { await rm(reviewPath,{force:true}); }
           if(!verdict.passed && !presentation.acceptReview) {
             job.qualityReview={...verdict,at:Date.now()};job.status='captured';job.errorCode='quality_review';delete job.pendingArtifact;

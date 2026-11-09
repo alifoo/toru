@@ -7,6 +7,7 @@ import type {Driver} from './recorder.js';
 import {sameProductSite} from './product-origin.js';
 import {withRecorderStore} from './store/open.js';
 import {ExtensionDeviceStore} from './store/extension-devices.js';
+import {hiddenRanges,pageVisibility} from './window-visibility.js';
 import {decodeLocal,LOCAL_METHODS,MAX_CAPTURE_MS,MAX_LOCAL_JSON,MAX_LOCAL_VIDEO,type LocalMethod} from './local-protocol.js';
 
 /** What the extension may be asked to do: the companion's page methods, plus opening the product tab. Never desktop sources. */
@@ -20,7 +21,7 @@ type Pairing={owner:string;expiresAt:number;authorize:()=>Promise<boolean>};
 const digest=(value:string)=>createHash('sha256').update(value).digest('hex');
 const onlineWindowMs=45_000;
 const pairingTtlMs=10*60_000;
-const forwardedErrors=['local_sign_in_required','local_navigation_blocked','local_method_forbidden','extension_tab_closed','extension_debugger_unavailable'];
+const forwardedErrors=['local_sign_in_required','local_navigation_blocked','local_method_forbidden','extension_tab_closed','extension_debugger_unavailable','recording_window_hidden'];
 const answer=(res:ServerResponse,status:number,value:unknown)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(value));};
 /** A reported video frame size: even integers a browser can encode, up to 4K. */
 export function captureSize(value:unknown):{width:number;height:number}|undefined{
@@ -104,8 +105,14 @@ export class ExtensionBridge {
   const invoke=async(method:ExtensionMethod,args:unknown[])=>{
    if(d.generation!==generation||!d.claimed)throw new Error('local_browser_disconnected');
    if(pendingMark){const previous=pendingMark;pendingMark=undefined;await previous;}
-   const result=await this.command(d,method,args) as {value?:unknown;meta?:Record<string,unknown>};
-   const incoming=result.meta??{};
+   let result:{value?:unknown;meta?:Record<string,unknown>};
+   // A refused command (recording_window_hidden) still reports what the extension saw, so its meta is read either way.
+   try{result=await this.command(d,method,args) as {value?:unknown;meta?:Record<string,unknown>};}
+   catch(error){const reported=(error as {meta?:unknown}).meta;if(reported&&typeof reported==='object'&&!Array.isArray(reported))absorb(method,reported as Record<string,unknown>);throw error;}
+   absorb(method,result.meta??{});
+   return result.value;
+  };
+  const absorb=(method:ExtensionMethod,incoming:Record<string,unknown>)=>{
    if(method==='stopRecording'&&typeof incoming.recordingElapsedMs==='number'&&Number.isFinite(incoming.recordingElapsedMs)&&incoming.recordingElapsedMs>0&&incoming.recordingElapsedMs<=MAX_CAPTURE_MS)meta.recordingDurationMs=incoming.recordingElapsedMs;
    for(const key of ['recordingMode','recordingElapsedMs','pointerTrail','pointerTelemetry','semanticTimeline','identitySightings'])if(Object.hasOwn(incoming,key))meta[key]=incoming[key];
    const viewport=incoming.captureViewport as {width?:unknown;height?:unknown}|undefined;
@@ -114,13 +121,16 @@ export class ExtensionBridge {
    // machine that could not encode that. Pointer and zoom coordinates stay in captureViewport's CSS pixels.
    const size=captureSize(incoming.captureSize);if(size)meta.captureSize=size;
    if(typeof meta.recordingElapsedMs==='number')meta.recordingStartedAtMs=Date.now()-meta.recordingElapsedMs;
-   return result.value;
+   // Whether Chrome was drawing the window at this command's check (0.1.16 on), and where it was not while recording.
+   meta.pageVisibility=pageVisibility(incoming.pageVisibility);
+   const ranges=hiddenRanges(incoming.hiddenRanges);if(ranges)meta.hiddenRanges=ranges;
   };
   return new Proxy({}, {get:(_target,key)=>{
    if(key==='then')return undefined;
    if(key==='onDisconnect')return (callback:()=>void)=>{if(d.generation===generation&&d.claimed)d.onDisconnect=callback;};
    if(key==='capturePrivacy')return undefined;
-   if(key==='captureViewport'||key==='captureSize'||key==='recordingMode'||key==='recordingStartedAtMs'||key==='recordingDurationMs')return meta[key];
+   if(key==='captureViewport'||key==='captureSize'||key==='recordingMode'||key==='recordingStartedAtMs'||key==='recordingDurationMs'||key==='pageVisibility')return meta[key];
+   if(key==='hiddenRanges')return ()=>meta.hiddenRanges??[];
    // Where email addresses were on screen, so the render blurs them before anything else sees the video.
    if(['pointerTrail','pointerTelemetry','semanticTimeline','identitySightings'].includes(String(key)))return ()=>meta[String(key)]??[];
    if(key==='markDemoMoment')return (...args:unknown[])=>{pendingMark=invoke('markDemoMoment',args);void pendingMark.catch(()=>undefined);};
@@ -220,7 +230,7 @@ export class ExtensionBridge {
     if(value?.body==='local_video_upload'){if(!pending.video)throw new Error('missing_video');value.body=pending.video;}
     clearTimeout(pending.timer);delete d.pending;
     if(input.error)console.warn(JSON.stringify({event:'extension_command_failed',method:pending.command.method,error:String(input.error).slice(0,60),detail:typeof input.detail==='string'?input.detail.replace(/[^\w .:<>()-]/g,'').slice(0,160):undefined}));
-    if(input.error)pending.reject(new Error(forwardedErrors.includes(input.error)?input.error:'local_browser_action_failed'));
+    if(input.error)pending.reject(Object.assign(new Error(forwardedErrors.includes(input.error)?input.error:'local_browser_action_failed'),{meta:input.meta}));
     else pending.resolve({value,meta:input.meta});
     answer(res,200,{received:true});return true;
    }

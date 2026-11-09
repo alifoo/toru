@@ -61,10 +61,21 @@ Read what the user asked for:
 
 ## The delivery check
 
-A directed video is held for review (`needs_review`, no credit used) in three cases:
+A directed video is held for review (`needs_review`, no credit used) in four cases:
 
 - the frames are blank or static, or the video is too short;
 - `camera_late`: the camera was still moving when a click landed;
-- `zoom_pumping`: the camera came out for less than two seconds and went back in, or zoomed more than four times in a minute.
+- `zoom_pumping`: the camera came out for less than two seconds and went back in, or zoomed more than four times in a minute;
+- `capture_stalled`: Chrome stopped drawing the recording window while the flow went on, so part of it is missing or frozen in the video. Held when an action (a click, typing, a gesture, a scroll, a key) ran while Toru for Chrome found the page hidden, when typing or a highlight falls in a stretch of more than 2 seconds without a new captured frame, or when a click is followed by 5 seconds without one.
 
 Camera holds come from Toru's own editing, not from your gestures. Report them plainly, and re-record only if the user wants to.
+
+### A hidden recording window
+
+Chrome does not draw a window that is minimized, fully covered by another app, or on another desktop or workspace (a window manager such as AeroSpace hides the windows of other workspaces). Nothing done there reaches the video: typed text never appears, a closing dialog stays frozen mid-fade, the cursor sticks. Toru cannot make Chrome draw it, so it says so:
+
+- every `browser_*` reply, and `recording_run_status` while you drive, carries `warning.code: "recording_window_hidden"` while the window is not drawn;
+- while recording, Toru for Chrome refuses page actions (click, type, key, select, scroll, navigate, gestures) with the error `recording_window_hidden` instead of performing them unseen. Nothing ran: ask the user to bring the Toru window into view, `browser_observe` again, then repeat the action;
+- a warning with `actionMissed: true` means the action already ran while the window was not drawn: it is missing from the video and the take will be held as `capture_stalled`. Once the window is visible, end the run with `recording_run_finish` outcome `"stuck"` and record again.
+
+Before a long recording, tell the user to keep the Toru window visible until it closes.

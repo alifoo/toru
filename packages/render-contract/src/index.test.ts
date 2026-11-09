@@ -29,6 +29,7 @@ import {
   videoDensity,
   outputTimeMs,
   reviewCamera,
+  reviewCapture,
   type CaptureLayers,
 } from "./index.js";
 
@@ -523,6 +524,26 @@ describe("cursor recording", () => {
       "pointer",
       "text",
     ]);
+  });
+
+  it("draws the arrow while pointing at text, and keeps the text cursor of a highlight", () => {
+    // An underline under a paragraph of an editor: the page reports an I-beam there, which does not read as an underline.
+    const recording = buildCursorRecording({
+      ...observation,
+      pointerTrail: [],
+      semanticTimeline: [
+        { type: "emphasis", atMs: 1_000, endMs: 2_000, ref: null, element: "underline paragraph Description" },
+        { type: "emphasis", atMs: 3_000, endMs: 4_000, ref: null, element: "highlight paragraph Description" },
+      ],
+      pointerTelemetry: [
+        { atMs: 500, x: 0.2, y: 0.2, kind: "move", shape: "text" },
+        { atMs: 1_200, x: 0.3, y: 0.3, kind: "move", shape: "text" },
+        { atMs: 1_900, x: 0.5, y: 0.3, kind: "move", shape: "text" },
+        { atMs: 3_500, x: 0.4, y: 0.3, kind: "move", shape: "text" },
+      ],
+    });
+    expect(recording.samples.filter(sample => [500, 1_200, 1_900, 3_500].includes(sample.timeMs)).map(sample => [sample.timeMs, sample.cursorType]))
+      .toEqual([[500, "text"], [1_200, "arrow"], [1_900, "arrow"], [3_500, "text"]]);
   });
 
   it("holds the cursor still while the model is thinking", () => {
@@ -1253,6 +1274,66 @@ describe("directed pacing", () => {
       expect(gap === 0 || gap >= 2_000).toBe(true);
     }
     expect(regions).toHaveLength(1);
+  });
+});
+
+describe("capture review", () => {
+  const typing = (atMs: number, endMs: number) => ({ type: "type" as const, atMs, endMs, ref: null, element: "Text input" });
+
+  it("holds a take whose window was hidden while the agent acted", () => {
+    // The Linear take: " video" typed into the title while the window sat on another workspace.
+    const capture = { pointerTrail: [], semanticTimeline: [typing(106_200, 108_000)], hiddenRanges: [{ startMs: 105_900, endMs: 108_400 }] };
+    expect(reviewCapture(capture)).toEqual(["capture_stalled"]);
+    // A press or a gesture inside a hidden range is held too.
+    expect(reviewCapture({ pointerTrail: [click(50_000)], hiddenRanges: [{ startMs: 49_000, endMs: 51_000 }] })).toEqual(["capture_stalled"]);
+    expect(reviewCapture({ pointerTrail: [], hiddenRanges: [{ startMs: 49_000, endMs: 51_000 }],
+      semanticTimeline: [{ type: "emphasis", atMs: 49_500, endMs: 50_500, ref: null, element: "circle Total" }] })).toEqual(["capture_stalled"]);
+  });
+
+  it("lets a hidden stretch without actions pass: the agent was waiting for the user and nothing was missed", () => {
+    expect(reviewCapture({ pointerTrail: [click(10_000)], semanticTimeline: [typing(30_000, 31_000)],
+      hiddenRanges: [{ startMs: 12_000, endMs: 28_000 }] })).toEqual([]);
+  });
+
+  it("holds typing or a highlight that the capture never painted", () => {
+    // Frames stopped at 108.8 s and came back at 127 s: the typing from 106.2 s on is frozen in the video.
+    const frozen = { pointerTrail: [], semanticTimeline: [typing(106_200, 112_000)], captureGaps: [{ startMs: 108_800, endMs: 127_000 }] };
+    expect(reviewCapture(frozen)).toEqual(["capture_stalled"]);
+    const short = { pointerTrail: [], semanticTimeline: [typing(20_000, 20_600)], captureGaps: [{ startMs: 19_000, endMs: 24_000 }] };
+    expect(reviewCapture(short)).toEqual(["capture_stalled"]);
+    const highlight = { pointerTrail: [], captureGaps: [{ startMs: 1_000, endMs: 6_000 }],
+      semanticTimeline: [{ type: "emphasis" as const, atMs: 2_000, endMs: 3_200, ref: null, element: "highlight paragraph Intro" }] };
+    expect(reviewCapture(highlight)).toEqual(["capture_stalled"]);
+  });
+
+  it("passes typing that painted, and a gap that only grazes it", () => {
+    // The page went still after the last character landed (the agent read the result): that gap touches 200 ms of it.
+    expect(reviewCapture({ pointerTrail: [], semanticTimeline: [typing(5_000, 8_000)], captureGaps: [{ startMs: 7_800, endMs: 20_000 }] })).toEqual([]);
+    // Shorter than the stall threshold.
+    expect(reviewCapture({ pointerTrail: [], semanticTimeline: [typing(5_000, 8_000)], captureGaps: [{ startMs: 5_000, endMs: 6_900 }] })).toEqual([]);
+  });
+
+  it("does not hold a pointing gesture over a still page on frames alone: the renderer draws the cursor", () => {
+    const capture = { pointerTrail: [], captureGaps: [{ startMs: 1_000, endMs: 15_000 }],
+      semanticTimeline: ["point", "circle", "underline", "sweep"].map((kind, index) =>
+        ({ type: "emphasis" as const, atMs: 2_000 + index * 3_000, endMs: 3_500 + index * 3_000, ref: null, element: `${kind} Total` })) };
+    expect(reviewCapture(capture)).toEqual([]);
+  });
+
+  it("holds a press followed by five seconds without a new frame, not one the page answered", () => {
+    expect(reviewCapture({ pointerTrail: [click(130_000)], captureGaps: [{ startMs: 127_100, endMs: 162_400 }] })).toEqual(["capture_stalled"]);
+    // The dialog opened 1.5 s after the press (a slow server): frames came, the press is in the video.
+    expect(reviewCapture({ pointerTrail: [click(10_000)], captureGaps: [{ startMs: 6_000, endMs: 11_500 }] })).toEqual([]);
+    // The page went still well before the press and nothing else changed for a while: a press on a dead window.
+    expect(reviewCapture({ pointerTrail: [click(10_000)], captureGaps: [{ startMs: 9_000, endMs: 14_000 }] })).toEqual([]);
+    expect(reviewCapture({ pointerTrail: [click(10_000)], captureGaps: [{ startMs: 9_000, endMs: 15_000 }] })).toEqual(["capture_stalled"]);
+  });
+
+  it("ignores marks and an observation without capture data", () => {
+    expect(reviewCapture(undefined)).toEqual([]);
+    expect(reviewCapture({ pointerTrail: [click(1_000)], semanticTimeline: [typing(2_000, 3_000)] })).toEqual([]);
+    expect(reviewCapture({ pointerTrail: [], hiddenRanges: [{ startMs: 0, endMs: 9_000 }],
+      semanticTimeline: [{ type: "result", atMs: 5_000, ref: null, element: "Done" }] })).toEqual([]);
   });
 });
 

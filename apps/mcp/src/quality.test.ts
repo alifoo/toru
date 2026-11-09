@@ -34,3 +34,14 @@ it('holds a directed demo whose camera pumps, and leaves the legacy camera alone
   const legacy = await assessDemo(join(dir, 'moving.mp4'), { semanticTimeline: [], pointerTrail: [] }, pumping);
   expect(legacy.passed).toBe(true);
 });
+it('holds a take whose window was hidden while the agent typed', async () => {
+  const typing = [{ type: 'type' as const, atMs: 500, endMs: 1_500, ref: null, element: 'Text input' }];
+  const hidden = await assessDemo(join(dir, 'moving.mp4'), { semanticTimeline: typing, pointerTrail: [], hiddenRanges: [{ startMs: 400, endMs: 1_600 }] });
+  expect(hidden).toMatchObject({ passed: false, reasons: ['capture_stalled'] });
+  const frozen = await assessDemo(join(dir, 'moving.mp4'), { semanticTimeline: typing, pointerTrail: [], captureGaps: [{ startMs: 0, endMs: 3_000 }] });
+  expect(frozen).toMatchObject({ passed: false, reasons: ['capture_stalled'] });
+  // Judged even when the video cannot be read.
+  expect(await assessDemo(join(dir, 'garbage.mp4'), { semanticTimeline: typing, pointerTrail: [], hiddenRanges: [{ startMs: 400, endMs: 1_600 }] }))
+    .toMatchObject({ passed: false, skipped: true, reasons: ['unassessable', 'capture_stalled'] });
+  expect((await assessDemo(join(dir, 'moving.mp4'), { semanticTimeline: typing, pointerTrail: [] })).passed).toBe(true);
+});

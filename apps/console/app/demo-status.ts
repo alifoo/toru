@@ -73,6 +73,7 @@ const qualityWords: Record<string, string> = {
   blank_frames: "The screen stayed blank",
   static_video: "Nothing moved on screen",
   too_short: "The video was too short",
+  capture_stalled: "The Chrome window was hidden while recording",
 };
 export const qualityReason = (code: string) => qualityWords[code] ?? code.replaceAll("_", " ");
 

@@ -833,3 +833,52 @@ it('makes gestures with the driver, falls back to pointing on one without them, 
     expect(scrolled.every(step => step >= 1 && step <= 6)).toBe(true);
   } finally { await recorder.close(); await rm(dir, { recursive: true, force: true }); }
 }, 20_000);
+
+it('warns while Chrome does not draw the recording window, keeps where, and judges the take on it', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'recorder-hidden-'));
+  const owner = randomUUID();
+  const driver = {
+    goto: vi.fn(async () => undefined), dispose: vi.fn(async () => undefined), startRecording: vi.fn(async () => undefined),
+    recordingMode: 'screencast' as const, redactSensitiveText: vi.fn(async () => undefined), recordingStartedAtMs: Date.now(),
+    pageVisibility: undefined as string | undefined,
+    pointer: vi.fn(async () => undefined), gesture: vi.fn(async () => { driver.pageVisibility = 'hidden'; }),
+    formInput: vi.fn(async () => undefined), typeText: vi.fn(async () => { throw new Error('recording_window_hidden'); }),
+    readPage: vi.fn(async () => '[ref_1] button Send'), currentUrl: vi.fn(async () => 'https://example.com'),
+    screenshot: vi.fn(async () => ({ body: Buffer.from('frame'), contentType: 'image/png', redactionPassed: true })),
+    stopRecording: vi.fn(async () => ({ body: Buffer.from('raw capture'), contentType: 'video/mp4', redactionPassed: true })),
+    pointerTrail: () => [], pointerTelemetry: () => [],
+    semanticTimeline: () => [{ type: 'emphasis', atMs: 1_000, endMs: 2_000, ref: 'ref_1', element: 'underline paragraph' }],
+    hiddenRanges: () => [{ startMs: 900, endMs: 2_100 }],
+  };
+  const assessQuality = vi.fn(async () => ({ passed: true, reasons: [], metrics: {} }));
+  const detectCaptureGaps = vi.fn(async () => [{ startMs: 2_100, endMs: 9_000 }]);
+  const recorder = new Recorder({ dataDir: dir, encryptionKey: randomBytes(32), assessQuality, detectCaptureGaps,
+    createContext: vi.fn(async () => driver) as unknown as RecorderOptions['createContext'], render: vi.fn(async () => Buffer.from('video')) });
+  try {
+    await recorder.initialize();
+    const id = String((await recorder.call(owner, 'session_open', { url: 'https://example.com' })).structuredContent?.id);
+    await recorder.call(owner, 'recording_start', { id });
+    // An extension that reports nothing (before the check) gets no warning.
+    expect((await recorder.call(owner, 'browser_click', { id, ref: 'ref_1' })).structuredContent?.warning).toBeUndefined();
+    // The window went away while the underline ran: the reply says so and that the step is missing from the video.
+    const traced = await recorder.call(owner, 'browser_trace', { id, ref: 'ref_1', shape: 'underline' });
+    expect(traced.structuredContent?.warning).toMatchObject({ code: 'recording_window_hidden', actionMissed: true });
+    expect(JSON.parse((traced.content[0] as { text: string }).text).warning.code).toBe('recording_window_hidden');
+    const observed = await recorder.call(owner, 'browser_observe', { id });
+    expect(observed.structuredContent?.warning).toMatchObject({ code: 'recording_window_hidden' });
+    expect((observed.structuredContent?.warning as { actionMissed?: boolean }).actionMissed).toBeUndefined();
+    expect(observed.content).toContainEqual(expect.objectContaining({ type: 'image' }));
+    // Toru for Chrome refuses the next page action: the error reaches the agent and nothing ran.
+    await expect(recorder.call(owner, 'browser_type', { id, text: ' video' })).rejects.toThrow('recording_window_hidden');
+    driver.pageVisibility = 'visible';
+    expect((await recorder.call(owner, 'browser_observe', { id })).structuredContent?.warning).toBeUndefined();
+    await recorder.call(owner, 'recording_stop', { id });
+    const observation = JSON.parse(await readFile(join(dir, 'jobs', id, 'observation.json'), 'utf8'));
+    expect(observation.hiddenRanges).toEqual([{ startMs: 900, endMs: 2_100 }]);
+    await recorder.call(owner, 'recording_render', { id });
+    await vi.waitFor(() => expect(assessQuality).toHaveBeenCalled());
+    // The delivery check sees both: where the page said it was hidden, and where the capture got no frame.
+    expect((assessQuality.mock.calls[0] as unknown[])[1]).toMatchObject({ hiddenRanges: [{ startMs: 900, endMs: 2_100 }], captureGaps: [{ startMs: 2_100, endMs: 9_000 }] });
+    expect((detectCaptureGaps.mock.calls[0] as unknown[] | undefined)?.[0]).toMatch(/raw\.mp4$/);
+  } finally { await recorder.close(); await rm(dir, { recursive: true, force: true }); }
+});

@@ -19,7 +19,7 @@ export default function Docs(){return <PublicPage><p className="eyebrow">Guide</
  <h2 id="brand">Your brand</h2>
  <p>In the console, open <b>Settings</b> and paste your product’s address: Toru reads its colour and logo from the site. Adjust the background, padding, intro and outro cards, the camera’s zoom, the cursor, the GIF and the output size, then save. Every demo of that product uses them automatically.</p>
  <h2 id="check">Delivery check and credits</h2>
- <p>Every video is checked before delivery. Blank, frozen or too-short videos are held back as needing review and never charged; you can record again or accept the video anyway. One credit is used when a video is delivered. See <a href="/pricing">pricing</a>.</p>
+ <p>Every video is checked before delivery. Blank, frozen or too-short videos, and takes where Chrome stopped drawing the recording window while your agent worked, are held back as needing review and never charged; you can record again or accept the video anyway. One credit is used when a video is delivered. See <a href="/pricing">pricing</a>.</p>
  <h2 id="library">Your demos</h2>
  <p>Your agent hands you links to the MP4 and GIF. Every demo also stays in <a href="https://app.toru.tools/#demos">Demos</a> for your plan’s storage period, with each step of the plan on the video’s timeline. Changed your brand? Render a demo again from there while its capture is kept; it uses no credit.</p>
  <h2 id="help">If something goes wrong</h2>

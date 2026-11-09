@@ -194,3 +194,28 @@ it('accepts only an even, encodable video size from the extension',()=>{
  expect(captureSize({width:1920,height:1080})).toEqual({width:1920,height:1080});
  for(const bad of [undefined,null,'2560x1440',{width:2561,height:1440},{width:2560.5,height:1440},{width:7680,height:4320},{width:320,height:180},{width:'2560',height:1440}])expect(captureSize(bad)).toBeUndefined();
 });
+
+it('carries whether Chrome drew the window, and a refused action with what the extension saw',async()=>{
+ const {bridge,post,context,paired}=await fixture();
+ const {connectionId,accessToken}=await paired();
+ const driver=await bridge.createContext('owner',connectionId,context) as Awaited<ReturnType<typeof bridge.createContext>>&{pageVisibility?:string;hiddenRanges():unknown[]};
+ const answer=async(reply:Record<string,unknown>)=>{const {command}=await (await post('poll',{},accessToken)).json();await post('result/'+command.id,reply,accessToken);return command;};
+ const go=driver.goto('https://app.example.com/issues');await answer({value:'https://app.example.com/issues'});await go;
+ // An extension before the check reports nothing: unknown, never hidden.
+ expect(driver.pageVisibility).toBeUndefined();expect(driver.hiddenRanges()).toEqual([]);
+ // The window was hidden while the gesture ran: the check after it says so, with the range it lies in.
+ const traced=driver.gesture!('underline',{type:'ref',ref:'e1'});
+ await answer({value:null,meta:{pageVisibility:'hidden',hiddenRanges:[{startMs:105_900,endMs:108_400},{startMs:'x',endMs:1}]}});
+ await traced;
+ expect(driver.pageVisibility).toBe('hidden');
+ expect(driver.hiddenRanges()).toEqual([{startMs:105_900,endMs:108_400}]);
+ // The next action is refused by the extension and not performed; its meta still arrives.
+ const refused=expect(driver.typeText(' video')).rejects.toThrow('recording_window_hidden');
+ await answer({error:'recording_window_hidden',meta:{pageVisibility:'hidden',hiddenRanges:[{startMs:105_900,endMs:120_000}]}});
+ await refused;
+ expect(driver.hiddenRanges()).toEqual([{startMs:105_900,endMs:120_000}]);
+ // Back in view.
+ const typed=driver.typeText(' video');await answer({value:null,meta:{pageVisibility:'visible'}});await typed;
+ expect(driver.pageVisibility).toBe('visible');
+ const disposed=driver.dispose();await answer({value:null});await disposed;
+});

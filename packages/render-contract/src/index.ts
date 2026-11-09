@@ -33,6 +33,19 @@ export type CaptureObservation = {
    * is drawn by the renderer, so a still picture with a still pointer is a stretch a viewer sees nothing happen in.
    */
   stillRanges?: Array<{ startMs: number; endMs: number }>;
+  /**
+   * Where Toru for Chrome found the recorded page not painting: its window hidden, minimized, covered or on another
+   * desktop (`document.visibilityState` hidden, or no animation frame while the page was free). Each range runs from
+   * the last check that found the page drawing to the one that found it not, so an action caught by it lies inside.
+   * Persisted with the capture.
+   */
+  hiddenRanges?: Array<{ startMs: number; endMs: number }>;
+  /**
+   * Stretches with no new frame in the raw capture, longer than `captureStallMs`, measured on the video at render
+   * time like `stillRanges`. Only a capture that keeps one frame per page change (Toru for Chrome) has them; a page
+   * that is drawing paints every typed character, so typing inside one was never recorded. Not persisted.
+   */
+  captureGaps?: Array<{ startMs: number; endMs: number }>;
   /** New captures have interval-based typing and scene boundaries. */
   directed?: boolean;
   /** Parts of the recording that show who the user is, blurred in the source before anything else. */
@@ -1491,8 +1504,15 @@ export function buildCursorRecording(
               shape: pointer.shape,
             },
           ]);
+  // Pointing at something (point, circle, underline, sweep) is a presenter's arrow, whatever the page shows under it:
+  // over text the page reports an I-beam, and an underline drawn with one does not read as an underline. A highlight
+  // keeps the page's shape, the text cursor of a hand selecting words.
+  const gestures = (observation.semanticTimeline ?? [])
+    .filter(moment => moment.type === "emphasis" && moment.endMs !== undefined && !moment.element.startsWith("highlight "))
+    .map(moment => ({ startMs: moment.atMs, endMs: moment.endMs! }));
   const samples = telemetry.map((sample) => {
-    const cursorType = cursorTypes[sample.shape ?? "arrow"];
+    const pointing = gestures.some(span => sample.atMs >= span.startMs && sample.atMs <= span.endMs);
+    const cursorType = cursorTypes[pointing ? "arrow" : sample.shape ?? "arrow"];
     /**
      * A typed sample never reaches the bitmap we supply: upstream resolves its own artwork from the
      * type first and only consults the asset when it cannot. Naming the asset and withholding the
@@ -1799,4 +1819,57 @@ export function reviewCamera(
     zooms.filter(other => other.startMs >= region.startMs && other.startMs < region.startMs + 60_000).length > zoomsPerMinute);
   if (outAndBack || crowded) reasons.push("zoom_pumping");
   return reasons;
+}
+
+/** A stretch of the raw capture with no new frame that counts as a stall when an action that paints falls in it. */
+export const captureStallMs = 2_000;
+/** How long a press may go without any new frame after it before the press counts as never recorded. */
+const unpaintedPressMs = 5_000;
+
+/**
+ * Whether the capture missed what the agent did, as a delivery-check reason: `capture_stalled`.
+ *
+ * Chrome stops drawing a window that is hidden, minimized, covered or on another desktop: the screencast sends no
+ * frames, animations pause and the page's pointer events are throttled, so the video holds one picture while the
+ * flow goes on (typed text that never appears, a dialog frozen mid-fade). That looks like a still to the render, which
+ * would quietly cut it. Held when:
+ * - any action (press, typing, gesture, scroll, key) falls in a range where the page reported itself hidden;
+ * - typing or a highlight (both paint at once, character by character) overlaps a frame gap for a second or more of
+ *   its span (all of it when shorter);
+ * - a press is followed by no new frame at all for five seconds.
+ * A pointing gesture over a still page paints nothing (the renderer draws the cursor), so a frame gap alone never
+ * holds one; the hidden ranges do.
+ */
+export function reviewCapture(
+  observation: Pick<CaptureObservation, "pointerTrail" | "semanticTimeline" | "hiddenRanges" | "captureGaps"> | undefined,
+): string[] {
+  if (!observation) return [];
+  const ranges = (value: unknown) => (Array.isArray(value) ? value as unknown[] : [])
+    .filter((range): range is TimeRange => typeof range === "object" && range !== null
+      && Number.isFinite((range as TimeRange).startMs) && Number.isFinite((range as TimeRange).endMs)
+      && (range as TimeRange).endMs >= (range as TimeRange).startMs);
+  const hidden = ranges(observation.hiddenRanges);
+  const gaps = ranges(observation.captureGaps).filter(gap => gap.endMs - gap.startMs >= captureStallMs);
+  if (!hidden.length && !gaps.length) return [];
+  const timeline = (observation.semanticTimeline ?? []).filter(moment => Number.isFinite(moment.atMs));
+  const span = (moment: CaptureSemanticAction): TimeRange =>
+    ({ startMs: moment.atMs, endMs: Math.max(moment.atMs, Number.isFinite(moment.endMs) ? moment.endMs! : moment.atMs) });
+  const presses = (observation.pointerTrail ?? []).map(pointer => pointer.atMs).filter(Number.isFinite);
+  // Marks the agent placed (setup, action, result) are not something the viewer watches happen.
+  const actions = [
+    ...timeline.filter(moment => !["setup", "action", "result"].includes(moment.type)).map(span),
+    ...presses.map(atMs => ({ startMs: atMs, endMs: atMs })),
+  ];
+  const touches = (a: TimeRange, b: TimeRange) => a.startMs <= b.endMs && b.startMs <= a.endMs;
+  if (actions.some(action => hidden.some(range => touches(action, range)))) return ["capture_stalled"];
+  const painting = timeline.filter(moment => moment.type === "type" || (moment.type === "emphasis" && moment.element.startsWith("highlight ")));
+  const unpainted = painting.some(moment => {
+    const { startMs, endMs } = span(moment);
+    // A select or a toggle is a single instant: it must show within a press's allowance.
+    if (endMs - startMs < 300) return gaps.some(gap => gap.startMs <= startMs && gap.endMs >= startMs + unpaintedPressMs);
+    const needed = Math.min(1_000, endMs - startMs);
+    return gaps.some(gap => Math.min(endMs, gap.endMs) - Math.max(startMs, gap.startMs) >= needed);
+  });
+  const frozenPress = presses.some(atMs => gaps.some(gap => gap.startMs <= atMs && gap.endMs >= atMs + unpaintedPressMs));
+  return unpainted || frozenPress ? ["capture_stalled"] : [];
 }
