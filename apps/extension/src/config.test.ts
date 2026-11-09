@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { captureFrameSize, captureScaleFor, chooseViewport, DEFAULT_VIEWPORT, VIEWPORT_PRESETS } from './config.js';
+import { captureFrameSize, captureScaleFor, chooseViewport, DEFAULT_VIEWPORT, renderScaleFor, VIEWPORT_PRESETS } from './config.js';
 
 describe('Toru for Chrome page layout', () => {
   it('records the preset the server names, 1280x720 for a server that names none, and the default otherwise', () => {
@@ -12,6 +12,20 @@ describe('Toru for Chrome page layout', () => {
     expect(chooseViewport({ width: 2560, height: 1440 })).toEqual(DEFAULT_VIEWPORT);
     expect(chooseViewport('1920x1080')).toEqual(DEFAULT_VIEWPORT);
     expect(DEFAULT_VIEWPORT).toEqual({ width: 1920, height: 1080 });
+  });
+
+  it('renders the tab at the screen\'s own scale, so a captured frame never re-renders the user\'s window', () => {
+    expect(renderScaleFor(1)).toBe(1);
+    expect(renderScaleFor(2)).toBe(2);
+    expect(renderScaleFor(1.5)).toBe(1.5);
+    // Not the 4/3 a 1920x1080 recording asks for: Chrome would re-render a 1x or 2x window at 4/3 for every frame.
+    expect(renderScaleFor(2)).not.toBeCloseTo(captureScaleFor(VIEWPORT_PRESETS['1920x1080']));
+    // Out of range or unreadable: the transport's bounds, or 1.
+    expect(renderScaleFor(4)).toBe(3);
+    expect(renderScaleFor(0.9)).toBe(1);
+    expect(renderScaleFor(undefined)).toBe(1);
+    expect(renderScaleFor('2')).toBe(2);
+    expect(renderScaleFor(Number.NaN)).toBe(1);
   });
 
   it('captures every preset at most 2560 wide and at most 2x, in even frame sizes', () => {

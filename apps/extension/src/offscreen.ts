@@ -10,7 +10,7 @@ import { CdpWebDriverTransport, type DebuggerChannel } from '../../../packages/b
 import { WebDriverBrowserDriver } from '../../../packages/browser/src/webdriver.js';
 import { assertLocalCommand, type LocalCommand } from '../../mcp/src/local-protocol.js';
 import { privateFieldsScript, privatePageScript } from '../../mcp/src/private-page.js';
-import { BUILD, captureFrameSize, captureScaleFor, chooseViewport, DEBUGGER_ADDRESS, DEVELOPMENT, OBSERVATION_WIDTH, SERVER, VERSION, type BrainState, type Credentials, type Viewport } from './config.js';
+import { BUILD, captureFrameSize, captureScaleFor, chooseViewport, renderScaleFor, DEBUGGER_ADDRESS, DEVELOPMENT, OBSERVATION_WIDTH, SERVER, VERSION, type BrainState, type Credentials, type Viewport } from './config.js';
 import { installDebuggerEndpoints, lastCaptureStats, liveCaptureStats, useDebuggerChannel } from './debugger-socket.js';
 import { HiddenRanges, probeVisibility, watched, type PageVisibility } from './visibility.js';
 import { WebCodecsStreamingEncoder } from './encoder.js';
@@ -112,11 +112,13 @@ let session: Session | undefined;
 detachListeners.add((tabId) => { if (session?.tabId === tabId) session.closed = true; });
 
 function channelFor(tabId: number): DebuggerChannel {
-  // A rendered frame (Page.captureScreenshot) briefly re-renders the view at the emulated device scale. Any mouse
-  // event Chrome receives meanwhile is mapped through the screen's own scale instead: on a 1x display at a 4/3 capture
-  // scale a move or press aimed at (372, 372) lands at (279, 279), on a 2x display at 1.5 times the point. A click
-  // then opens the wrong row or none at all, and the hover the recording shows wanders. So no mouse event is sent while
-  // a frame is in flight, and no frame starts while a mouse event is in flight or a button is held.
+  // A rendered frame (Page.captureScreenshot) re-renders the view at the emulated device scale when that is not the
+  // screen's own. Any mouse event Chrome receives meanwhile is mapped through the screen's own scale instead: on a 1x
+  // display at a 4/3 capture scale a move or press aimed at (372, 372) lands at (279, 279), on a 2x display at 1.5
+  // times the point. A click then opens the wrong row or none at all, and the hover the recording shows wanders. The
+  // tab now renders at the screen's own scale (renderScaleFor), where a capture changes nothing; this stays as the
+  // guard for a window dragged to a screen of another scale mid-recording. So no mouse event is sent while a frame is
+  // in flight, and no frame starts while a mouse event is in flight or a button is held.
   //
   // Neither side waits for ever: Chrome can hold a screenshot of a page that is not painting (a static consent
   // screen, a window another one covers), and an unbounded wait there hung the click behind it until the server
@@ -219,12 +221,17 @@ async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?:
   await closeSession();
   const { tabId } = await worker<{ tabId: number }>('open', { viewport });
   const channel = channelFor(tabId);
-  useDebuggerChannel(channel, scale);
+  // The screen's own scale, read from the fresh tab (at 100%, before any device metrics override). The tab renders the
+  // viewport at exactly that scale: any other makes each captured frame re-render the user's window (renderScaleFor).
+  const screenScale = await channel.send('Runtime.evaluate', { expression: 'devicePixelRatio', returnByValue: true })
+    .then((result) => (result as { result?: { value?: unknown } }).result?.value, () => undefined);
+  const render = renderScaleFor(screenScale);
+  useDebuggerChannel(channel, scale, render);
   let sessionPath = '';
-  // The tab renders the viewport at `scale` device pixels per CSS pixel (2560 device pixels wide at most) and the
-  // screencast asks for that many: the same layout and coordinates, a sharper recording. The navigator's screenshots
-  // stay 1280 wide, the viewport scaled down into them.
-  const cdp = new CdpWebDriverTransport(channel, { debuggerAddress: DEBUGGER_ADDRESS, deviceScaleFactor: scale, observationWidth: OBSERVATION_WIDTH, downscale: (png, width, height) => scalePng(png, width, height, scale) });
+  // The screencast asks for the viewport at `scale` (2560 device pixels wide at most): on a Retina screen Chrome scales
+  // its denser frames down to that, on a 1x screen they stay 1x. The layout and every coordinate are the CSS viewport's.
+  // The navigator's screenshots stay 1280 wide, the viewport scaled down into them.
+  const cdp = new CdpWebDriverTransport(channel, { debuggerAddress: DEBUGGER_ADDRESS, deviceScaleFactor: render, observationWidth: OBSERVATION_WIDTH, downscale: (png, width, height) => scalePng(png, width, height, render) });
   const transport = {
     request: async (method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown) => {
       const value = await cdp.request(method, path, body);
