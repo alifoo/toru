@@ -1410,7 +1410,9 @@ export class Recorder {
       }
       // Measured on the raw capture too: where no new frame came, so the delivery check can tell a page that stopped
       // drawing (a hidden window) from one that held still (capture_stalled).
-      const gaps = await (this.options.detectCaptureGaps ?? detectCaptureGaps)(
+      // Only Toru for Chrome keeps one frame per page change; a Mac capture's pacing is its own, so a quiet stretch
+      // there says nothing about a hidden window.
+      const gaps = job.desktopDeviceId ? undefined : await (this.options.detectCaptureGaps ?? detectCaptureGaps)(
         this.path(job.id, job.rawFile==='raw.mp4'?'raw.mp4':'raw.webm'), observation.durationMs);
       if (gaps) observation.captureGaps = gaps;
       const config = buildExporterConfig(observation, {
