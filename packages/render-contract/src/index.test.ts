@@ -1291,6 +1291,31 @@ describe("camera review", () => {
     expect(together).toHaveLength(1);
   });
 
+  it("does not set the camera off toward a result or a gesture marked right after a click", () => {
+    // The Linear take of 09/11/2026: "Create issue" clicked, the result marked on the screenshot that click returned
+    // half a second later, the new row circled after it. The result's approach crossed the click: camera_late.
+    const pointers = [click(4_000, { x: 0.2, y: 0.3 }), click(9_000, { x: 0.66, y: 0.35 }), click(12_000, { x: 0.66, y: 0.42 }),
+      click(20_000, { x: 0.66, y: 0.35 })];
+    const capture = { width: 1920, height: 1080, frameRate: 30, durationMs: 32_000, pointerTrail: pointers,
+      pointerTelemetry: [], directed: true,
+      semanticTimeline: [
+        { type: "click" as const, atMs: 9_000, ref: null, element: "button Todo" },
+        { type: "click" as const, atMs: 12_000, ref: null, element: "option Done" },
+        { type: "emphasis" as const, atMs: 12_600, endMs: 13_800, ref: null, element: "point activity", focus: { x: 0.12, y: 0.37, width: 0.2, height: 0.03 } },
+        { type: "click" as const, atMs: 20_000, ref: null, element: "button Create issue" },
+        { type: "emphasis" as const, atMs: 21_200, endMs: 22_600, ref: null, element: "trace new row", focus: { x: 0.05, y: 0.64, width: 0.12, height: 0.03 } },
+        { type: "result" as const, atMs: 20_500, ref: null, element: "TOR-19", focus: { x: 0, y: 0.33, width: 0.6, height: 0.4 } },
+      ] };
+    const config = buildExporterConfig(capture, { compressPauses: true });
+    const zooms = config.zoomRegions as Array<{ intent?: string; startMs: number; endMs: number }>;
+    expect(reviewCamera(config, capture)).toEqual([]);
+    // The payoff is still framed, and the video still ends wide.
+    const payoff = zooms.find(zoom => zoom.intent === "result");
+    expect(payoff).toBeDefined();
+    expect(payoff!.startMs).toBeGreaterThanOrEqual(20_000 + 100 + 1_023);
+    expect(zooms.at(-1)!.endMs).toBeLessThanOrEqual(32_000 - 1_016);
+  });
+
   it("does not count a release between two zooms the camera holds through", () => {
     const clickAt = { pointerTrail: [click(5_200)], directed: true };
     // The first zoom hands straight on to the second, which arrives before the click: no camera move at 5.2 s.
