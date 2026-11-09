@@ -115,6 +115,15 @@ export function renderBitrate(captureMs: number | undefined): number {
   const seconds = Math.max(1, (Number.isFinite(captureMs) ? captureMs ?? 0 : 0) / 1000);
   return Math.min(8_000_000, Math.round(450 * 1024 ** 2 * 8 / seconds / 100_000) * 100_000);
 }
+/**
+ * The amount to hand a driver's scrollBy for `pixels`. A Mac scrolls by points; Toru for Chrome up to 0.1.13 reads
+ * the amount as 100px wheel ticks (1–10), so 450 scrolled 1000px and a reading pass ran twice as far as asked. Ticks
+ * are exact for both old and new extensions (0.1.14 also takes pixels above 10).
+ */
+export function scrollAmount(driver: Pick<Driver, 'capturePrivacy'>, pixels: number): number {
+  if (driver.capturePrivacy === 'user-approved-desktop') return pixels;
+  return Math.min(10, Math.max(1, Math.round(pixels / 100)));
+}
 const uuid = z.uuid();
 /** The space every pointer, zoom and redaction coordinate of a capture is in: its viewport, in CSS pixels. */
 function observationViewport(driver: Pick<Driver, 'captureViewport'>) {
@@ -679,8 +688,9 @@ export class Recorder {
           const at = { type: 'coordinate' as const, x: z.number().min(0).max(1919).parse(args.x ?? 960), y: z.number().min(0).max(1079).parse(args.y ?? 540) };
           for (let read = 0; read < total;) {
             this.assertActive(active);
-            const step = Math.min(total - read, 300 + Math.round(Math.random() * 300));
-            await driver.scrollBy(at, 'down', step); read += step;
+            // Whole hundreds: Toru for Chrome up to 0.1.13 reads a scroll amount as 100px wheel ticks.
+            const step = Math.min(total - read, 300 + 100 * Math.round(Math.random() * 3));
+            await driver.scrollBy(at, 'down', scrollAmount(driver, step)); read += step;
             await new Promise(resolve => setTimeout(resolve, 600 + Math.round(Math.random() * 300)));
           }
           break;
@@ -693,7 +703,7 @@ export class Recorder {
         }
         case 'browser_scroll':
           await driver.scrollBy({ type: 'coordinate', x: z.number().min(0).max(1919).parse(args.x ?? 960), y: z.number().min(0).max(1079).parse(args.y ?? 540) },
-            z.enum(['up', 'down', 'left', 'right']).parse(args.direction), z.number().min(1).max(3000).parse(args.amount ?? 600)); break;
+            z.enum(['up', 'down', 'left', 'right']).parse(args.direction), scrollAmount(driver, z.number().min(1).max(3000).parse(args.amount ?? 600))); break;
         case 'browser_key': await driver.pressKey(z.string().min(1).max(50).parse(args.key)); break;
         case 'browser_wait': {
           const ms = z.number().int().min(250).max(10_000).parse(args.ms ?? 2_000);
@@ -766,7 +776,9 @@ export class Recorder {
     const images: CallToolResult['content'] = [];
     if (mode !== 'outline') {
       const shot = await driver.screenshot('observation', false);
-      if (!shot.redactionPassed) throw new Error('screenshot_redaction_failed');
+      // A shared Mac window is never redacted (the user approved sharing it, as for its capture below), so its
+      // screenshots always report redactionPassed false; refusing them left an agent driving a Mac app blind.
+      if (!shot.redactionPassed && driver.capturePrivacy !== 'user-approved-desktop') throw new Error('screenshot_redaction_failed');
       if (active.startedAt !== undefined && active.job.status === 'recording') {
         const observationId = randomUUID(), observedAtMs = Date.now() - active.startedAt;
         active.observations!.set(observationId, observedAtMs);

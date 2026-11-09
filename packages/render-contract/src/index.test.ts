@@ -1274,6 +1274,23 @@ describe("camera review", () => {
     expect(reviewCamera({ zoomRegions: [{ startMs: 4_000, endMs: 9_000 }] }, directed)).toEqual([]);
   });
 
+  it("measures the gap between two zooms on screen, after the pauses are cut", () => {
+    const quiet = { pointerTrail: [], directed: true };
+    const zoomRegions = [{ startMs: 1_000, endMs: 4_000, intent: "emphasis" }, { startMs: 14_000, endMs: 17_000 }];
+    // Ten seconds apart in the capture, but the cut leaves 1.5 s between them on screen: out and straight back in.
+    expect(reviewCamera({ zoomRegions, trimRegions: [{ startMs: 4_500, endMs: 13_000 }] }, quiet)).toEqual(["zoom_pumping"]);
+    expect(reviewCamera({ zoomRegions, trimRegions: [] }, quiet)).toEqual([]);
+  });
+
+  it("does not open the camera for a moment when a cut pause brings two zooms together", () => {
+    const pointers = [click(2_000, { x: 0.2, y: 0.2 }), click(14_000, { x: 0.8, y: 0.8 })];
+    const apart = proposeZoomRegions(pointers, 20_000, [], [], true);
+    const together = proposeZoomRegions(pointers, 20_000, [], [], true, [{ startMs: 4_500, endMs: 12_500 }]);
+    expect(apart).toHaveLength(2);
+    // Far apart on screen and close in time once cut: the second click is filmed wide instead of a quick out-and-in.
+    expect(together).toHaveLength(1);
+  });
+
   it("flags zooms that pump out and back in or crowd a minute", () => {
     const quiet = { pointerTrail: [], directed: true };
     expect(reviewCamera({ zoomRegions: [{ startMs: 1_000, endMs: 4_000 }, { startMs: 5_000, endMs: 8_000 }] }, quiet))

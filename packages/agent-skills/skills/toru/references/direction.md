@@ -44,6 +44,9 @@ Read what the user asked for:
 5. **Zoom is for reading.** Toru zooms for typing, small elements and the result. Do not try to force more zooms.
 6. **A screen that stays still for more than about 10 seconds needs a change.** Point or sweep, rather than waiting on an unchanged picture.
 7. **Keep within the recording limit.** In a long flow, emphasize only the result.
+8. **Tidy the screen first, as setup.** A sidebar listing private pages, a cookie banner or a promo card is closed before the flow, and each such click is followed by `mark_demo_moment` kind `setup` so the camera skips it. Then move the cursor off the control you clicked, or its tooltip stays on screen.
+9. **Re-read the screen after anything that changes the layout.** Closing a sidebar, opening a panel or scrolling renumbers the refs; a stale ref fails and costs seconds of still video. When a card or row has properties, click its title text, not its middle.
+10. **After a highlight in an editor, leave by the side away from its toolbar.** Notion, Google Docs and similar editors open a formatting toolbar under a selection, and a cursor that crosses it opens its menus on camera. Move up or to the empty margin, never across the toolbar.
 
 ## Example: a wizard that creates a saved search
 

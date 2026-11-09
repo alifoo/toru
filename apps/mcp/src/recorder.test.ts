@@ -512,7 +512,7 @@ it('exports explicitly approved desktop capture without claiming automatic redac
  let finishUpload!:()=>void;
  const uploadPending=new Promise<void>(resolve=>{finishUpload=resolve;});
  const driver={capturePrivacy:'user-approved-desktop',captureViewport:{width:1280,height:720},recordingDurationMs:15050,
-  goto:vi.fn(),dispose:vi.fn(async()=>undefined),startRecording:vi.fn(),redactSensitiveText:vi.fn(),
+  goto:vi.fn(),currentUrl:vi.fn(async()=>'https://toru.tools/desktop/com.linear'),dispose:vi.fn(async()=>undefined),startRecording:vi.fn(),redactSensitiveText:vi.fn(),
   stopRecording:vi.fn(async()=>{await uploadPending;return {body:Buffer.from('desktop video'),contentType:'video/mp4',redactionPassed:false};}),
   screenshot:vi.fn(async()=>({body:Buffer.from('desktop preview'),redactionPassed:false})),
  };
@@ -526,6 +526,10 @@ it('exports explicitly approved desktop capture without claiming automatic redac
   const id=String(opened.structuredContent?.id);
   await recorder.call(owner,'recording_start',{id});
   expect(driver.redactSensitiveText).not.toHaveBeenCalled();
+  // The agent driving a shared Mac window sees it: its screenshots are never redacted, and are not refused for it.
+  const seen=await recorder.call(owner,'browser_observe',{id,mode:'screenshot'});
+  expect(seen.isError).toBeFalsy();
+  expect(seen.content.some(item=>item.type==='image')).toBe(true);
   const stopping=await recorder.call(owner,'recording_stop',{id});
   expect(stopping.structuredContent?.status).toBe('stopping');
   expect((await recorder.call(owner,'recording_render',{id})).structuredContent?.status).toBe('stopping');
@@ -823,8 +827,9 @@ it('makes gestures with the driver, falls back to pointing on one without them, 
     await recorder.call(owner, 'browser_highlight', { id, ref: 'ref_1', text: 'founded in 2013' });
     expect(driver.gesture).toHaveBeenCalledWith('highlight', { type: 'ref', ref: 'ref_1' }, { text: 'founded in 2013' });
     await recorder.call(owner, 'browser_read', { id, amount: 900 });
+    // Toru for Chrome takes 100px wheel ticks: 900px in steps of 3 to 6 ticks, never the 1000px a pixel count became.
     const scrolled = driver.scrollBy.mock.calls.map(call => call[2] as number);
-    expect(scrolled.reduce((sum, step) => sum + step, 0)).toBe(900);
-    expect(scrolled.every(step => step <= 600)).toBe(true);
+    expect(scrolled.reduce((sum, step) => sum + step, 0)).toBe(9);
+    expect(scrolled.every(step => step >= 1 && step <= 6)).toBe(true);
   } finally { await recorder.close(); await rm(dir, { recursive: true, force: true }); }
 }, 20_000);

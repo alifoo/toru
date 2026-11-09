@@ -1814,3 +1814,28 @@ describe("gestures", () => {
     }
   });
 });
+
+describe("scrollBy units", () => {
+  it("reads small amounts as wheel ticks and larger ones as pixels", { timeout: 20_000 }, async () => {
+    const protocol = new ProtocolHarness();
+    const context = await new WebDriverBrowserDriver(protocol, {
+      resolveHostname: async () => ["93.184.216.34"],
+    }).createContext(contextOptions());
+    try {
+      await context.goto("https://demo.example.com/dashboard");
+      const deltas = async (amount: number) => {
+        const before = protocol.calls.length;
+        await context.scrollBy({ type: "coordinate", x: 640, y: 360 }, "down", amount);
+        const bodies = protocol.calls.slice(before).map(call => JSON.stringify(call.body) ?? "");
+        const scroll = bodies.find(body => body.includes("scrollBy") || body.includes("\"wheel\""))!;
+        return scroll;
+      };
+      // The computer-use toolset's three ticks scroll 300px; a 450px reading step scrolls 450px, not 1000.
+      expect(await deltas(3)).toMatch(/[,\[]300[,\]]/);
+      expect(await deltas(450)).toMatch(/[,\[]450[,\]]/);
+      expect(await deltas(450)).not.toMatch(/[,\[]1000[,\]]/);
+    } finally {
+      await context.dispose().catch(() => undefined);
+    }
+  });
+});

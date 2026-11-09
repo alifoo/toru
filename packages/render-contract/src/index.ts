@@ -500,6 +500,10 @@ const minimumCutMs = 400;
 
 export type TimeRange = { startMs: number; endMs: number };
 
+/** How much of [from, to] the cuts remove: what the viewer does not see between two moments. */
+function cutBetween(cuts: readonly TimeRange[], from: number, to: number): number {
+  return mergeRanges(cuts).reduce((sum, cut) => sum + Math.max(0, Math.min(to, cut.endMs) - Math.max(from, cut.startMs)), 0);
+}
 function mergeRanges(ranges: readonly TimeRange[]): TimeRange[] {
   const merged: TimeRange[] = [];
   for (const range of [...ranges].filter(r => r.endMs > r.startMs).sort((a, b) => a.startMs - b.startMs)) {
@@ -1052,7 +1056,7 @@ export function proposeZoomRegions(
   // A zoom cut down to a moment (a click that navigates at once) only twitches the camera in and straight back out.
   const shortest = directed ? minimumShotMs : 0;
   const lasting = regions.filter(region => region.endMs - region.startMs > shortest || region.intent === "result");
-  return directed ? paceZooms(lasting) : lasting;
+  return directed ? paceZooms(lasting, removable) : lasting;
 }
 
 /** The labels of clicks that only move a flow on, as the driver describes them ("button Próximo", "link Back ›"). */
@@ -1077,15 +1081,16 @@ export function movesFlowOn(pointer: CapturePointer, timeline: readonly CaptureS
 const zoomsPerMinute = 4;
 const openBetweenZoomsMs = 2_000;
 
-function paceZooms(regions: readonly ProposedZoomRegion[]): ProposedZoomRegion[] {
+function paceZooms(regions: readonly ProposedZoomRegion[], removable: readonly TimeRange[] = []): ProposedZoomRegion[] {
   const kept: ProposedZoomRegion[] = [];
   const essential = (region: ProposedZoomRegion) =>
     region.intent === "result" || region.intent === "type" || region.intent === "emphasis";
   for (const candidate of [...regions].sort((a, b) => a.startMs - b.startMs)) {
     const region = { ...candidate };
     const previous = kept[kept.length - 1];
-    const gap = previous ? region.startMs - previous.endMs : Infinity;
-    if (previous && gap > 0 && gap < openBetweenZoomsMs) {
+    // The gap the viewer sees: a pause cut out between two zooms brings them together on screen.
+    const gap = previous ? region.startMs - previous.endMs - cutBetween(removable, previous.endMs, region.startMs) : Infinity;
+    if (previous && region.startMs > previous.endMs && gap < openBetweenZoomsMs) {
       // Close by, the camera holds through the gap instead of coming out and back. Elsewhere, one of the two goes.
       const reach = 0.5 / Math.min(previous.customScale, region.customScale);
       if (Math.hypot(region.focus.cx - previous.focus.cx, region.focus.cy - previous.focus.cy) <= reach) {
@@ -1710,10 +1715,15 @@ export function reviewCamera(
   const essential = (region: { intent?: unknown }) =>
     region.intent === "result" || region.intent === "type" || region.intent === "emphasis";
   const zooms = regions.filter(region => !essential(region));
+  // Measured on screen: the trims remove what the viewer never sees between two zooms.
+  const trims = (Array.isArray(config.trimRegions) ? config.trimRegions as unknown[] : [])
+    .filter((trim): trim is TimeRange => typeof trim === "object" && trim !== null
+      && typeof (trim as TimeRange).startMs === "number" && typeof (trim as TimeRange).endMs === "number");
   const outAndBack = regions.some((region, index) => {
     const previous = regions[index - 1];
-    const gap = previous ? region.startMs - previous.endMs : Infinity;
-    return gap > 0 && gap < openBetweenZoomsMs && !(essential(region) && essential(previous!));
+    if (!previous || region.startMs <= previous.endMs) return false;
+    const gap = region.startMs - previous.endMs - cutBetween(trims, previous.endMs, region.startMs);
+    return gap < openBetweenZoomsMs && !(essential(region) && essential(previous));
   });
   const crowded = zooms.some(region =>
     zooms.filter(other => other.startMs >= region.startMs && other.startMs < region.startMs + 60_000).length > zoomsPerMinute);
