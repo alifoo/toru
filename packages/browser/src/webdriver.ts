@@ -182,6 +182,29 @@ const left=Math.max(b.left,Math.min(...firstLine.map(c=>c.left))),right=Math.min
 const top=Math.min(...firstLine.map(c=>c.top)),bottom=Math.max(...firstLine.map(c=>c.bottom));
 return {x:left,y:top,width:right-left,height:bottom-top};`;
 
+/**
+ * What a circle goes around: the text the agent meant, not the box it hit. A list row or a card is often the full width
+ * of the window, and a loop around it swept the cursor from edge to edge in under a second (Linear, 09/11/2026: a
+ * circle on a new issue row read as the cursor going mad). Given a point, the deepest element there with text, at most
+ * 45% of the window wide; otherwise the element's longest text that fits. Null keeps the element's box.
+ */
+const ringScript = `const e=arguments[0],px=arguments[1],py=arguments[2],limit=innerWidth*0.45;
+const fits=r=>r.width>=8&&r.height>=6&&r.width<=limit;
+if(typeof px==='number'&&typeof py==='number'){let t=document.elementFromPoint(px,py);
+for(let k=0;t&&k<8;k++,t=t.parentElement){const r=t.getBoundingClientRect();if((t.textContent||'').trim()&&fits(r))return {x:r.left,y:r.top,width:r.width,height:r.height};if(t===e)break;}}
+let best=null,bestLength=0;const w=document.createTreeWalker(e,NodeFilter.SHOW_TEXT);
+for(let n=w.nextNode(),k=0;n&&k<400;n=w.nextNode(),k++){const text=n.data.trim();if(text.length<=bestLength)continue;
+const range=document.createRange();range.selectNodeContents(n);const r=range.getBoundingClientRect();if(!fits(r))continue;best=r;bestLength=text.length;}
+return best&&{x:best.left,y:best.top,width:best.width,height:best.height};`;
+
+/** How long a loop takes: a presenter's hand at about 700 px a second, never a flick and never a crawl. */
+export function circleDurationMs(box: Box, margin: number): number {
+  const a = box.width / 2 + margin, b = box.height / 2 + margin;
+  // Ramanujan's perimeter of an ellipse.
+  const perimeter = Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
+  return Math.round(Math.min(2_000, Math.max(1_000, perimeter / 0.7)));
+}
+
 /** How long a sweep rests on each row, and how long it takes to slide to the next. */
 const sweepRestMs = 420, sweepGlideMs = 280;
 /** Labels of the presses that change state, before which a presenter hesitates (docs/gestos-humanos.md). */
@@ -2163,6 +2186,18 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       if (!lines.length) throw new WebDriverProtocolError("text_to_highlight_not_found");
       characters = numeric(raw.length, 20);
     }
+    // A circle goes around the text meant, not a row or card as wide as the window; the camera frames that too.
+    if (kind === "circle") {
+      const point = target.type === "coordinate" ? target : undefined;
+      const raw = await this.executeScript("gesture_ring", ringScript, [{ [elementKey]: element }, point?.x ?? null, point?.y ?? null]).catch(() => null);
+      if (isObject(raw) && [raw.x, raw.y, raw.width, raw.height].every(value => typeof value === "number" && Number.isFinite(value))) {
+        box = clip({ x: Number(raw.x), y: Number(raw.y), width: Number(raw.width), height: Number(raw.height) });
+      } else if (box.width > viewWidth * 0.45) {
+        // No text to go around: a third of the window around the box's centre, not its whole width.
+        const width = Math.round(viewWidth / 3);
+        box = clip({ x: Math.round(box.x + box.width / 2 - width / 2), y: box.y, width, height: box.height });
+      }
+    }
     // An underline runs under the text itself: its first line as rendered, not the element's box.
     let line: Box | undefined;
     if (kind === "underline") {
@@ -2183,7 +2218,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
         await this.restPointer(800 + this.motion() * 700);
       } else if (kind === "circle") {
         await this.movePointerTo(element, inside(circlePoint(box, 12, 0)), "arrow");
-        await this.glidePointer(900 + this.motion() * 300, progress => inside(circlePoint(box, 12, progress)));
+        await this.glidePointer(circleDurationMs(box, 12) + this.motion() * 200, progress => inside(circlePoint(box, 12, progress)));
       } else if (kind === "underline") {
         const stroke = (progress: number) => inside(line ? textUnderlinePoint(line, progress) : underlinePoint(box, progress));
         await this.movePointerTo(element, stroke(0), "arrow");
