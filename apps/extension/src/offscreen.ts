@@ -217,7 +217,8 @@ async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?:
   // The page layout the server chose (1920x1080 unless the recording picked another preset). A server that names
   // none predates the choice and gets the 1280x720 it expects; either way the recording reports what it used.
   const viewport = chooseViewport(input.viewport);
-  const scale = captureScaleFor(viewport);
+  const sharp = input.sharpCapture === true;
+  const scale = captureScaleFor(viewport, sharp);
   await closeSession();
   const { tabId } = await worker<{ tabId: number }>('open', { viewport });
   const channel = channelFor(tabId);
@@ -227,7 +228,7 @@ async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?:
     .then((result) => (result as { result?: { value?: unknown } }).result?.value, () => undefined);
   // Asked for a sharp capture, a 1x screen renders at the capture scale anyway (2560 wide): the socket then renders
   // each frame itself, which flickers the window, a cost the recording chose. A denser screen keeps its own scale.
-  const render = input.sharpCapture === true ? Math.max(renderScaleFor(screenScale), scale) : renderScaleFor(screenScale);
+  const render = sharp ? Math.max(renderScaleFor(screenScale), scale) : renderScaleFor(screenScale);
   useDebuggerChannel(channel, scale, render);
   let sessionPath = '';
   // The screencast asks for the viewport at `scale` (2560 device pixels wide at most): on a Retina screen Chrome scales
@@ -241,7 +242,7 @@ async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?:
       return value;
     },
   };
-  const encoder = new WebCodecsStreamingEncoder(captureFrameSize(viewport));
+  const encoder = new WebCodecsStreamingEncoder(captureFrameSize(viewport, sharp));
   // The user's Chrome resolves names itself; the driver's private-network check applies to Toru's own browsers.
   const browser = new WebDriverBrowserDriver(transport, { resolveHostname: async () => ['93.184.216.34'], streamingVideoEncoder: encoder, recordingFrameRate: 30, captureScale: scale });
   try {

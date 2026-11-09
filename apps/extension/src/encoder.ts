@@ -18,7 +18,8 @@ const fullHd = 1920 * 1080;
  */
 export function avcBitrate(size: Size): number | Quality {
   const pixels = size.width * size.height;
-  if (pixels > fullHd) return Math.round((6_000_000 * pixels) / (2560 * 1440) / 1000) * 1000;
+  // A sharp 4K capture is held to 10 Mbps: its text is already dense, and a five-minute take stays inside the upload.
+  if (pixels > fullHd) return Math.min(10_000_000, Math.round((6_000_000 * pixels) / (2560 * 1440) / 1000) * 1000);
   if (pixels > 1280 * 720) return Math.round((4_000_000 * pixels) / fullHd / 1000) * 1000;
   return QUALITY_HIGH;
 }

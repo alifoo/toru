@@ -39,8 +39,8 @@ export const runSchema = z.object({
   loginEmail: z.string().trim().min(3).max(320).optional(), useDemoAccount: z.boolean().optional(),
   /** The page layout Toru for Chrome records (CSS viewport); 1920x1080 when absent. */
   viewport: viewportSchema.optional(),
-  /** Toru for Chrome: 2560-wide capture on a 1x screen, at the cost of a flickering recording window. */
-  sharpCapture: z.boolean().optional().describe("Toru for Chrome: true records the page at 2560 wide even when the Toru window is on a 1x screen (an external 1080p monitor), for a sharp video that zooms in cleanly. The recording window flickers while it records. Without it a 1x screen records 1920x1080 and a Retina screen 2560 either way. Use it for landing or launch videos when the window is on a 1x screen."),
+  /** Toru for Chrome: a 2x capture (3840 wide for a 1920 layout) on any screen, at the cost of a flickering recording window. */
+  sharpCapture: z.boolean().optional().describe("Toru for Chrome: true records the page at twice its CSS size (3840x2160 for the 1920x1080 layout) on any screen, so the camera's zooms show it pixel for pixel: the sharpest video. The recording window flickers while it records. Without it a 1x screen records 1920x1080 and a Retina screen 2560x1440. Use it for landing, launch and marketing videos."),
   /** Toru for Chrome: the user approved showing e-mail addresses (their own product's), so nothing is blurred. */
   showEmails: z.boolean().optional().describe("Toru for Chrome only: true when the user asked to show the e-mail addresses on screen (their own product). Neither the page nor the render blurs them then. Leave it out otherwise."),
   /** Toru for Chrome: e-mail domains that stay legible and extra texts to blur (see privacy.ts). */
