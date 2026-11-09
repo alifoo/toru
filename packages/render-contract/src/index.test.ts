@@ -1,6 +1,7 @@
 import type { CapturePointer, CapturePointerSample } from "@content-layer/browser";
 import { describe, expect, it } from "vitest";
 import {
+  pacedSpans,
   buildCursorRecording,
   buildExporterConfig,
   clickReserveRanges,
@@ -1527,5 +1528,19 @@ describe("highlight cursor", () => {
     expect(at(timed, 11_125)).toBeCloseTo(0.35, 2);
     expect(at(redrawn, 11_125)).toBeLessThan(0.21);
     expect(timed.at(-1)).toMatchObject({ atMs: 12_250, x: 0.5 });
+  });
+});
+
+describe('pacedSpans', () => {
+  it('plays a scroll the driver drew slower back at its pace, and nothing else', () => {
+    expect(pacedSpans([
+      { atMs: 1_000, type: 'click', ref: null, element: 'button' },
+      { atMs: 2_000, endMs: 3_200, type: 'scroll', ref: null, element: 'viewport', pace: 3 },
+      { atMs: 4_000, type: 'scroll', ref: null, element: 'viewport' },
+      { atMs: 5_000, endMs: 6_500, type: 'scroll', ref: null, element: 'viewport', pace: 9 },
+    ])).toEqual([
+      { id: 'pace-0', startMs: 2_000, endMs: 3_200, speed: 3 },
+      { id: 'pace-1', startMs: 5_000, endMs: 6_500, speed: 4 },
+    ]);
   });
 });

@@ -1360,6 +1360,23 @@ function focusModeFor(
  * would remove the two moments worth keeping. A margin at each end leaves the motion into and out of
  * the pause at normal speed, so the change of pace reads as editing rather than a glitch.
  */
+/**
+ * The spans the driver performed slower than a viewer should see them (a scroll during a capture that takes few frames
+ * a second), played back at the pace the driver recorded: a 1.2s glide drawn at a third of its speed plays in 400ms
+ * with every frame the capture took, instead of a 400ms glide caught in four.
+ */
+export function pacedSpans(timeline: readonly CaptureSemanticAction[]): ProposedSpeedRegion[] {
+  const spans: ProposedSpeedRegion[] = [];
+  for (const action of [...timeline].sort((left, right) => left.atMs - right.atMs)) {
+    const pace = action.pace;
+    if (pace === undefined || !Number.isFinite(pace) || pace <= 1 || action.endMs === undefined) continue;
+    const startMs = Math.max(action.atMs, spans.at(-1)?.endMs ?? 0);
+    if (action.endMs - startMs < 100) continue;
+    spans.push({ id: `pace-${spans.length}`, startMs, endMs: action.endMs, speed: Math.min(4, pace) });
+  }
+  return spans;
+}
+
 export function proposeSpeedRegions(
   telemetry: readonly CapturePointerSample[],
   durationMs: number,
@@ -1730,8 +1747,7 @@ export function buildExporterConfig(
     // Their decoder applies these while everything else stays on the source clock, so speeding a
     // pause up does not shift a single zoom region or cursor sample.
     speedRegions:
-      presentation.speedRegions ??
-      (presentation.compressPauses && !observation.directed
+      presentation.speedRegions ?? [...pacedSpans(observation.semanticTimeline ?? []), ...(presentation.compressPauses && !observation.directed
         ? proposeSpeedRegions(observation.pointerTelemetry, observation.durationMs, observation.idleRanges,
           observation.idleRanges ? [
             { startMs: 0, endMs: 1_500 },
@@ -1740,7 +1756,7 @@ export function buildExporterConfig(
             ...zoomRegions.map(region => ({ startMs: region.startMs - 1_000, endMs: region.endMs + 1_000 })),
             ...clickReserves,
           ] : [])
-        : []),
+        : [])].sort((left, right) => left.startMs - right.startMs),
     annotationRegions: presentation.annotationRegions ?? [],
     // The renderer's own dwell suggester needs to know how long the recording runs.
     durationMs: observation.durationMs,

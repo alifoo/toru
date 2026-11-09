@@ -29,3 +29,17 @@ it('chains at panel boundaries and leaves custom canvas/iframe input to WebDrive
   expect(scroll(element({closest:()=>({})}),root,0,400)).toBe(false);
   expect(scroll(root,root,0,-400)).toBe(false);
 });
+it('draws a paced scroll itself and resolves when it lands',async()=>{
+  const scrollTo=vi.fn();
+  const root=element({scrollTo});
+  let now=0;const frames:Array<(t:number)=>void>=[];
+  const run=new Function('document','getComputedStyle','performance','requestAnimationFrame',`return function(){${smoothScrollScript}}`);
+  const done=run({elementFromPoint:()=>root,scrollingElement:root},()=>({}),{now:()=>now},(f:(t:number)=>void)=>frames.push(f))(20,30,0,600,1200);
+  expect(root.scrollBy).not.toHaveBeenCalled();
+  for(let t=0;t<=1300&&frames.length;t+=100){now=t;frames.shift()!(t);}
+  await expect(done).resolves.toBe(true);
+  const tops=scrollTo.mock.calls.map(([o])=>(o as {top:number}).top);
+  expect(tops.at(-1)).toBe(600);
+  expect(tops.length).toBeGreaterThan(10);
+  expect(tops[6]).toBeCloseTo(300,0);
+});
