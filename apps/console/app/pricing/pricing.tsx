@@ -14,7 +14,7 @@ export function Pricing() {
   const account = isSignedIn ? <><a className="st-signin" href="/">Open Toru</a><UserButton /></> : isLoaded ? <><SignInButton mode="modal"><button type="button" className="st-signin st-signin-button">Sign in</button></SignInButton><SignUpButton mode="modal"><button type="button" className="primary st-nav-cta"><span className="record-dot" aria-hidden="true" />Start free</button></SignUpButton></> : undefined;
   return <div className="public-site pricing-site lw-site st-site">
     <div className="lw-container"><PublicHeader account={account} /></div>
-    <main className="pricing-main"><header className="pricing-heading"><h1>Pricing</h1><p>Recording infrastructure for your agent. Start free, upgrade when you need more.</p></header>
+    <main className="pricing-main"><header className="pricing-heading"><h1>Pricing</h1><p>Let your agent record anything. Start free, upgrade when you need more.</p></header>
       <PlanCards key={userId ?? 'signed-out'} signedIn={Boolean(isSignedIn)} loaded={isLoaded} />
       <p className="pricing-note">1 credit = 1 delivered video that passed the check. Prices in USD, billed monthly. Cancel renewal anytime. Paid plans include a <a href="https://toru.tools/terms#refunds">14-day refund policy</a>.</p>
       {creditPacksEnabled && <section className="pricing-included" aria-labelledby="packs-title"><h2 id="packs-title">Credit packs</h2><p className="pricing-note">Need a few more videos without changing plan? Packs never expire and stack on top of any plan.</p><div>{creditPacks.map(pack=><span key={pack.id}>{pack.credits} {pack.credits===1?'credit':'credits'} · US${pack.price.toFixed(2)}</span>)}</div></section>}

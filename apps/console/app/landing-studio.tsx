@@ -26,7 +26,6 @@ const scenes:Scene[]=[
   steps:[{label:'Search for',target:'Screencast',at:0},{label:'Open',target:'the article',at:7.5},{label:'Underline',target:'the title',at:9.5},{label:'Read down to',target:'Uses',at:12.5},{label:'Highlight',target:'the sentence',at:14.5}],
   poster:'/landing/wikipedia.jpg',video:'/landing/wikipedia.mp4',alt:'Wikipedia in Chrome: the Screencast article searched, read and a sentence highlighted'},
 ];
-type Background='mist'|'ocean';
 
 const clock=(seconds:number)=>`00:${String(Math.floor(seconds)).padStart(2,'0')}`;
 
@@ -140,36 +139,4 @@ function Composer({appUrl}:{appUrl:string}){
    <button type="submit" className="primary st-send" data-cta="hero-ask"><span className="record-dot" aria-hidden="true"/>Start free</button>
   </div>
  </form>;
-}
-
-type Take={id:string;name:string;meta:string;poster:string;video:string;alt:string;background:Background;size:'lg'|'md'|'sm'};
-const takes:Take[]=[
- {id:'linear',name:'linear-issue-done.mp4',meta:'Chrome · 42 s',poster:'/landing/linear-end.jpg',video:'/landing/linear.mp4',alt:'Linear in Chrome: an issue marked Done, then a new issue created',background:'mist',size:'lg'},
- {id:'notion',name:'notion-roadmap.mp4',meta:'Chrome · 30 s',poster:'/landing/notion-end.jpg',video:'/landing/notion.mp4',alt:'Notion in Chrome: a project page read down to its roadmap, and a shipped card opened',background:'mist',size:'md'},
- {id:'wikipedia',name:'wikipedia-screencast.mp4',meta:'Chrome · 27 s',poster:'/landing/wikipedia.jpg',video:'/landing/wikipedia.mp4',alt:'Wikipedia in Chrome: the Screencast article searched, read and a sentence highlighted',background:'mist',size:'md'},
-];
-
-/** Finished demos on a light table. A recording loads only when someone presses play. */
-export function ContactSheet(){
- const [playing,setPlaying]=useState<string>();
- return <div className="st-sheet">
-  {takes.map(take=><figure key={take.id} className={`st-take st-take-${take.size}`}>
-   <figcaption><b>{take.name}</b><span>{take.meta}</span></figcaption>
-   <div className={`st-frame st-bg-${take.background}`}>
-    <div className="st-shot-wrap">
-     {playing===take.id
-      ?<video src={take.video} poster={take.poster} autoPlay muted playsInline controls aria-label={take.alt}/>
-      :<><img src={take.poster} alt={take.alt} width={1280} height={720} loading="lazy"/><button type="button" className="st-take-play" onClick={()=>setPlaying(take.id)}><span>Play</span></button></>}
-    </div>
-   </div>
-  </figure>)}
-  <figure className="st-take st-take-sm st-take-half">
-   <figcaption><b>Intro card</b><span>Toru Team</span></figcaption>
-   <div className="st-frame st-bg-ocean"><div className="st-card"><span>Toru Team · Linear</span><b>Record the launch video</b></div></div>
-  </figure>
-  <figure className="st-take st-take-sm st-take-half st-take-held">
-   <figcaption><b>take-02 · frozen</b><span>held back, not charged</span></figcaption>
-   <div className="st-held" aria-label="A frozen take, held back by the delivery check"><span>Held by the delivery check</span></div>
-  </figure>
- </div>;
 }

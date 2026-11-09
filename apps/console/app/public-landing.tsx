@@ -1,7 +1,7 @@
 import {LegacyWorkspaceRedirect} from './legacy-workspace-redirect';
 import {APP_URL} from './site';
 import {AgentIcon,InstallTabs} from './landing-interactive';
-import {ContactSheet,StudioWindow} from './landing-studio';
+import {StudioWindow} from './landing-studio';
 import {CLIENTS,type Client} from './agent-setup';
 import {plans,sourceUrl} from './pricing/plans';
 import {PlanCard} from './pricing/plan-card';
@@ -10,7 +10,7 @@ import { ToruOrb } from "./toru-orb";
 import { PublicFooter, PublicHeader, PublicPage } from "./public-chrome";
 export { PublicFooter, PublicHeader, PublicPage };
 export const recordingFaqs=[
- {question:'What is Toru?',answer:'Toru is the recording infrastructure your AI agent uses to record product demos itself. Your agent plans the flow from your code and records it in your Chrome or the app on your Mac; Toru supplies the capture, the camera moves, your brand and a check of every take, and hands back an MP4 and a GIF.'},
+ {question:'What is Toru?',answer:'Toru lets your AI agent record anything you can open in your own Chrome or on your Mac: product demos, bug repros, changelog GIFs and how-tos. Your agent plans the flow from your code and records it in your Chrome or the app on your Mac; Toru supplies the capture, the camera moves, your brand and a check of every take, and hands back an MP4 and a GIF.'},
  {question:'Which model clicks through my product?',answer:'Yours. The agent you already use (Claude Code, Cursor, Codex) drives the flow with Toru\'s tools, a few tokens per step. Toru adds no model of its own and no model cost.'},
  {question:'Which agents work with Toru?',answer:'Claude Code, Claude, Cursor, Codex and any client that supports remote MCP servers. Install the Toru skill (alifoo/toru-skills) or add https://mcp.toru.tools/mcp as a connector and sign in to Toru.'},
  {question:'Where do my product passwords go?',answer:'Nowhere. Toru records in your own Chrome, where you are already signed in, or on your Mac. It never asks for a password or a code, and a sign-in page stops the run instead of being recorded.'},
@@ -38,7 +38,7 @@ function Heading({id,title}:{id:string;title:string}){
 
 export function PublicLanding(){
  const schema={'@context':'https://schema.org','@graph':[
-  {'@type':'Organization','@id':'https://toru.tools/#organization',name:'Toru',url:'https://toru.tools',logo:'https://toru.tools/icon.png',description:'A recording tool your AI agent uses on its own to record your product demos in your own Chrome or on your Mac.',email:'support@toru.tools'},
+  {'@type':'Organization','@id':'https://toru.tools/#organization',name:'Toru',url:'https://toru.tools',logo:'https://toru.tools/icon.png',description:'Toru lets your AI agent record anything in your own Chrome or on your Mac: product demos, bug repros, changelog GIFs and how-tos.',email:'support@toru.tools'},
   {'@type':'SoftwareApplication',name:'Toru',url:'https://toru.tools',applicationCategory:'MultimediaApplication',operatingSystem:'Web, macOS',description:recordingFaqs[0]!.answer,offers:plans.map(plan=>({'@type':'Offer',name:plan.name,price:String(plan.price),priceCurrency:'USD',url:'https://toru.tools/pricing'}))},
   {'@type':'FAQPage',mainEntity:landingFaqs.map(item=>({'@type':'Question',name:item.question,acceptedAnswer:{'@type':'Answer',text:item.answer}}))},
  ]};
@@ -47,13 +47,13 @@ export function PublicLanding(){
   <main>
    <section className="st-hero" aria-labelledby="landing-title">
     <ToruOrb size={76}/>
-    <h1 id="landing-title">Recording infrastructure for your agent.</h1>
-    <p className="st-lede">Your coding agent records your product demos itself: launch clips, changelog GIFs, help-center guides and bug repros. Toru is its camera, editor and brand kit, and checks every take.</p>
+    <h1 id="landing-title">Let your agent record anything.</h1>
+    <p className="st-lede">Ask Claude Code, Cursor, Codex or Claude for a video of any flow (a launch demo, a bug repro, a changelog GIF, a how-to) and it records it in your own Chrome or on your Mac, in your brand, with every take checked.</p>
     <div className="st-hero-actions">
      <a className="primary st-cta" href={APP_URL} data-cta="hero-start-free"><span className="record-dot" aria-hidden="true"/>Start free</a>
      {sourceUrl&&<a className="st-github" href={sourceUrl} target="_blank" rel="noreferrer" data-cta="hero-github-star"><GitHubMark/>Star on GitHub</a>}
     </div>
-    <p className="st-trust">10 free demos a month · No card required · {sourceUrl?<a href={sourceUrl} target="_blank" rel="noreferrer">Open source, MIT</a>:'Open source, MIT'}</p>
+    <p className="st-trust">Web apps in your own Chrome · Native apps on your Mac · 10 free videos a month · No card required · {sourceUrl?<a href={sourceUrl} target="_blank" rel="noreferrer">Open source, MIT</a>:'Open source, MIT'}</p>
    </section>
    <StudioWindow appUrl={APP_URL}/>
 
@@ -63,9 +63,8 @@ export function PublicLanding(){
    </section>
 
    <section className="st-section" id="use-cases" aria-labelledby="uses-title">
-    <Heading id="uses-title" title="What your agent can record for you."/>
+    <Heading id="uses-title" title="Anything you can open, your agent can record."/>
     <dl className="st-uses">{useCases.map(([title,body,prompt])=><div key={title}><dt>{title}</dt><dd><span>{body}</span><q>{prompt}</q></dd></div>)}</dl>
-    <ContactSheet/>
    </section>
 
    <section className="st-section" id="how-it-works" aria-label="Connect your agent">
