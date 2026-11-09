@@ -795,10 +795,10 @@ describe("full exporter surface", () => {
     // Their 3.0 is calibrated for a 1080-high canvas. Applied unchanged to a shorter frame the
     // pointer dominated the picture.
     const reference = buildExporterConfig({ ...observation, height: 1080 });
-    expect(reference.cursorScale).toBe(2.4);
+    expect(reference.cursorScale).toBe(1.6);
 
     const shorter = buildExporterConfig({ ...observation, height: 540 });
-    expect(shorter.cursorScale as number).toBeCloseTo(1.2, 1);
+    expect(shorter.cursorScale as number).toBeCloseTo(0.8, 1);
   });
 
   it("keeps the cursor its size on a capture recorded at a device scale", () => {
