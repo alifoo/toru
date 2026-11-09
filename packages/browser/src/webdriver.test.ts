@@ -18,6 +18,7 @@ import {
   circlePoint,
   humanTravelPoint,
   underlinePoint,
+  textUnderlinePoint,
   minimumJerk,
   motionRandom,
   planHumanTravel,
@@ -46,6 +47,10 @@ class ProtocolHarness implements WebDriverTransport {
   targetDescription = "Search";
   passage: unknown = { rects: [{ x: 200, y: 400, width: 300, height: 20 }], interactive: false, endsOnControl: true, length: 20 };
   rows: unknown = [{ x: 100, y: 100, width: 800, height: 40 }, { x: 100, y: 140, width: 800, height: 40 }, { x: 100, y: 180, width: 800, height: 40 }];
+  /** The first rendered line of the element's text, for an underline; null for an element without text. */
+  textLine: unknown = null;
+  /** The CSS cursor of the element the pointer travels to (an editor's description shows an I-beam). */
+  targetCursor: string | undefined;
   /** Ref lookups miss when this is null, which is how a stale ref is simulated. */
   refElement: string | null = "element-1";
   pageOutline = '[ref_1] button "Encontrar novos leads"';
@@ -85,6 +90,7 @@ class ProtocolHarness implements WebDriverTransport {
     }
     if (path.endsWith("/execute/sync")) {
       const script = (body as { script: string }).script;
+      if (script.includes("firstLine")) return this.textLine;
       if (script.includes("const norm=t=>")) return (body as { args: unknown[] }).args[2] === "select" ? { selected: 20 } : this.passage;
       if (script.includes("createTreeWalker(root,NodeFilter.SHOW_TEXT)")) return this.identityRects;
       if (script.includes("tbody tr")) return this.rows;
@@ -103,7 +109,7 @@ class ProtocolHarness implements WebDriverTransport {
       if (script.includes("role=main")) return this.pageTextValue;
       if (script.includes("e.tagName==='SELECT'")) return this.formKind;
       // Ordered before the viewport branch: both scripts mention window.innerWidth.
-      if (script.includes("Math.round(r.left")) return { x: 100, y: 200, w: 1280, h: 720 };
+      if (script.includes("Math.round(r.left")) return { x: 100, y: 200, w: 1280, h: 720, ...(this.targetCursor ? { c: this.targetCursor } : {}) };
       if (script.includes("getComputedStyle(e).cursor"))
         return { x: 0.5, y: 0.4, w: 0.1, h: 0.05, cursor: "pointer" };
       if (script.includes("f?.action")) return this.targetDescription;
@@ -1770,6 +1776,48 @@ describe("gestures", () => {
     expect(half.y).toBeGreaterThan(320);
     expect(underlinePoint(box, 0)).toEqual({ x: 400, y: 346 });
     expect(underlinePoint(box, 1)).toEqual({ x: 600, y: 346 });
+    // Under a line of text: from its first character to its last, 3px under the baseline (4/5 down its text box).
+    const line = { x: 200, y: 400, width: 300, height: 20 };
+    expect(textUnderlinePoint(line, 0)).toEqual({ x: 200, y: 419 });
+    expect(textUnderlinePoint(line, 1)).toEqual({ x: 500, y: 419 });
+  });
+
+  it("underlines the rendered text, not the element's box, and points with the arrow over text", { timeout: 20_000 }, async () => {
+    const protocol = new ProtocolHarness();
+    const context = await new WebDriverBrowserDriver(protocol, {
+      resolveHostname: async () => ["93.184.216.34"],
+    }).createContext(contextOptions()) as unknown as BrowserContextDriver & {
+      gesture(kind: string, target: unknown): Promise<void>;
+      pointerTelemetry(): Array<{ atMs: number; x: number; y: number; shape?: string }>;
+    };
+    try {
+      await context.goto("https://demo.example.com/dashboard");
+      await context.startRecording();
+      // A full-width description (the element box is 400..600) whose sentence ends at 520; an editor shows an I-beam over it.
+      protocol.textLine = { x: 400, y: 305, width: 120, height: 20 };
+      protocol.targetCursor = "text";
+      const before = context.pointerTelemetry().length;
+      await context.gesture("underline", { type: "coordinate", x: 500, y: 320 });
+      const stroke = context.pointerTelemetry().slice(before);
+      const end = stroke.at(-1)!;
+      expect(Math.round(end.x * 1280)).toBe(520);
+      expect(Math.round(end.y * 720)).toBe(324);
+      // The stroke (after the travel to its start) stays on the sentence, under its baseline: the old one ran 6px
+      // under the box, at 346, and on to the box's right edge at 600.
+      const line = stroke.slice(stroke.findIndex(sample => Math.round(sample.x * 1280) === 400 && Math.round(sample.y * 720) === 324));
+      expect(line.length).toBeGreaterThan(2);
+      expect(line.every(sample => Math.round(sample.y * 720) === 324 && sample.x * 1280 >= 399.5 && sample.x * 1280 <= 520.5)).toBe(true);
+      expect(stroke.every(sample => sample.shape === "arrow")).toBe(true);
+      // An element without text keeps the stroke under its box.
+      protocol.textLine = null;
+      const second = context.pointerTelemetry().length;
+      await context.gesture("underline", { type: "coordinate", x: 500, y: 320 });
+      const fallback = context.pointerTelemetry().slice(second).at(-1)!;
+      expect(Math.round(fallback.y * 720)).toBe(346);
+      expect(Math.round(fallback.x * 1280)).toBe(600);
+    } finally {
+      await context.dispose();
+    }
   });
 
   it("records each gesture as an emphasis moment framed on the element, without pressing", { timeout: 20_000 }, async () => {

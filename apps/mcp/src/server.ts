@@ -24,6 +24,7 @@ import { activeInviteForOwner, artifactGrantForOwner, authenticateBearer, reserv
 import { createInvite, revokeInvites } from "./invites.js";
 import { TOOL_NAMES, TOOL_SCHEMAS, type ToolName } from "./tools.js";
 import { windowSizeSchema } from "./desktop-window.js";
+import { recordingWindowHidden } from "./window-visibility.js";
 
 /** `timeline` is read by the server for the console; it is never handed out as a link (not in ARTIFACT_KINDS). */
 export type ArtifactKind = "video" | "preview" | "raw" | "plan" | "events" | "gif" | "timeline";
@@ -395,6 +396,8 @@ function toolFailure(error: unknown, tool: ToolName, args: Record<string, unknow
     element_disabled: 'No click was dispatched: the control is disabled. Observe the page, complete missing input or wait for loading, then verify it is enabled before clicking.',
     observation_not_found: 'This screenshot is not available in the current recording. Observe again, verify the result and use the returned observationId.',
     observation_requires_result: 'observationId is only supported for result moments. setup/action classify the last interaction.',
+    // Toru for Chrome refused the action: the page would not have been drawn, so it would have been missing from the video.
+    recording_window_hidden: `${recordingWindowHidden.message} The action was not performed: repeat it once the window is visible.`,
   };
   const retryable = ['capacity_busy', 'service_draining', 'browser_execution_failed', 'session_restore_failed'].includes(code);
   const driverCode = error instanceof WebDriverProtocolError && ['unable to set cookie', 'invalid cookie domain', 'invalid argument', 'timeout', 'invalid session id', 'no such window'].includes(error.code) ? error.code : undefined;

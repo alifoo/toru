@@ -153,10 +153,34 @@ export function circlePoint(box: Box, margin: number, progress: number): Point {
   };
 }
 
-/** A point on a stroke 6px under `box`, left to right. */
+/** A point on a stroke 6px under `box`, left to right: for an element without text. */
 export function underlinePoint(box: Box, progress: number): Point {
   return { x: Math.round(box.x + box.width * minimumJerk(progress)), y: Math.round(box.y + box.height + 6) };
 }
+
+/**
+ * A point on a stroke just under the baseline of a line of text, from its first character to its last and no further.
+ * `line` is the line's text box (a Range's client rect: the font's ascent and descent); the baseline sits about four
+ * fifths of the way down it, and the stroke 3px below that, where a pen would underline.
+ */
+export function textUnderlinePoint(line: Box, progress: number): Point {
+  return { x: Math.round(line.x + line.width * minimumJerk(progress)), y: Math.round(line.y + line.height * 0.8 + 3) };
+}
+
+/**
+ * The first line of the element's own text, as it is rendered: the union of its text's client rects on that line,
+ * inside the element. A description that fills the width of its column but says one short sentence underlines that
+ * sentence, not the column. Null when the element shows no text.
+ */
+const firstLineScript = `const e=arguments[0],b=e.getBoundingClientRect(),firstLine=[];
+const w=document.createTreeWalker(e,NodeFilter.SHOW_TEXT);
+scan:for(let n=w.nextNode(),k=0;n&&k<400;n=w.nextNode(),k++){if(!n.data.trim())continue;const r=document.createRange();r.selectNodeContents(n);
+for(const c of r.getClientRects()){if(c.width<1||c.height<1||c.right<=b.left||c.left>=b.right||c.bottom<=b.top||c.top>=b.bottom)continue;
+if(firstLine.length&&c.top>=firstLine[0].top+firstLine[0].height/2)break scan;firstLine.push(c);}}
+if(!firstLine.length)return null;
+const left=Math.max(b.left,Math.min(...firstLine.map(c=>c.left))),right=Math.min(b.right,Math.max(...firstLine.map(c=>c.right)));
+const top=Math.min(...firstLine.map(c=>c.top)),bottom=Math.max(...firstLine.map(c=>c.bottom));
+return {x:left,y:top,width:right-left,height:bottom-top};`;
 
 /** How long a sweep rests on each row, and how long it takes to slide to the next. */
 const sweepRestMs = 420, sweepGlideMs = 280;
@@ -802,7 +826,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
    *
    * Outside a recording, move directly without the presentation pauses.
    */
-  private async movePointerTo(element: string, point?: { x: number; y: number }): Promise<boolean> {
+  private async movePointerTo(element: string, point?: { x: number; y: number }, shape?: CapturePointerShape): Promise<boolean> {
     const centre = await this.executeScript(
       "element_centre",
       "const e=arguments[0],r=e.getBoundingClientRect();let c='default';try{c=getComputedStyle(e).cursor}catch{}return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2),w:window.innerWidth,h:window.innerHeight,c};",
@@ -810,7 +834,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
     );
     if (!isObject(centre)) throw new WebDriverProtocolError("invalid_pointer_target");
     this.viewportSize = { width: numeric(centre.w, 1_280), height: numeric(centre.h, 720) };
-    const arrivalShape = pointerShapeFor(centre.c);
+    const arrivalShape = shape ?? pointerShapeFor(centre.c);
     const targetX = point?.x ?? numeric(centre.x, Number.NaN);
     const targetY = point?.y ?? numeric(centre.y, Number.NaN);
     if (!Number.isFinite(targetX) || !Number.isFinite(targetY) || targetX < 0 || targetY < 0) {
@@ -2139,19 +2163,31 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       if (!lines.length) throw new WebDriverProtocolError("text_to_highlight_not_found");
       characters = numeric(raw.length, 20);
     }
+    // An underline runs under the text itself: its first line as rendered, not the element's box.
+    let line: Box | undefined;
+    if (kind === "underline") {
+      const raw = await this.executeScript("gesture_line", firstLineScript, [{ [elementKey]: element }]).catch(() => null);
+      if (isObject(raw) && [raw.x, raw.y, raw.width, raw.height].every(value => typeof value === "number" && Number.isFinite(value)) && Number(raw.width) >= 1) {
+        line = clip({ x: Number(raw.x), y: Number(raw.y), width: Number(raw.width), height: Number(raw.height) });
+      }
+    }
     const startedAt = Date.now();
     const inside = (point: Point): Point => ({
       x: Math.min(viewWidth - 1, Math.max(0, point.x)), y: Math.min(viewHeight - 1, Math.max(0, point.y)) });
+    // Pointing is a presenter's arrow, whatever the page shows there: over text the page shows an I-beam, and an
+    // underline drawn with one does not read as an underline. A highlight keeps the text cursor of a hand selecting.
+    if (kind !== "highlight") this.driverShape = "arrow";
     await this.command(`browser_gesture_${kind}`, async () => {
       if (kind === "point") {
-        await this.movePointerTo(element, inside({ x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) }));
+        await this.movePointerTo(element, inside({ x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) }), "arrow");
         await this.restPointer(800 + this.motion() * 700);
       } else if (kind === "circle") {
-        await this.movePointerTo(element, inside(circlePoint(box, 12, 0)));
+        await this.movePointerTo(element, inside(circlePoint(box, 12, 0)), "arrow");
         await this.glidePointer(900 + this.motion() * 300, progress => inside(circlePoint(box, 12, progress)));
       } else if (kind === "underline") {
-        await this.movePointerTo(element, inside(underlinePoint(box, 0)));
-        await this.glidePointer(600 + this.motion() * 300, progress => inside(underlinePoint(box, progress)));
+        const stroke = (progress: number) => inside(line ? textUnderlinePoint(line, progress) : underlinePoint(box, progress));
+        await this.movePointerTo(element, stroke(0), "arrow");
+        await this.glidePointer(600 + this.motion() * 300, stroke);
       } else if (kind === "highlight") {
         // The cursor runs from the passage's first character to its last and the selection grows under it, as when a
         // presenter drags across text to stress it. Nothing is pressed: a press and release over a clickable card or row
@@ -2191,7 +2227,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
         const along = (row: Box): Point => inside({ x: Math.round(row.x + Math.min(row.width / 3, 240)), y: Math.round(row.y + row.height / 2) });
         // Slow enough to read: at 150ms a stop the first Notion demo swept four steps in under a second and the
         // video showed the cursor only on the first one.
-        await this.movePointerTo(element, along(rows[0]!));
+        await this.movePointerTo(element, along(rows[0]!), "arrow");
         for (const row of rows.slice(1)) {
           const from = this.pointerAt!, to = along(row);
           await delay(sweepRestMs);

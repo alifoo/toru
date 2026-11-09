@@ -11,7 +11,8 @@ import { WebDriverBrowserDriver } from '../../../packages/browser/src/webdriver.
 import { assertLocalCommand, type LocalCommand } from '../../mcp/src/local-protocol.js';
 import { privateFieldsScript, privatePageScript } from '../../mcp/src/private-page.js';
 import { BUILD, captureFrameSize, captureScaleFor, chooseViewport, DEBUGGER_ADDRESS, DEVELOPMENT, OBSERVATION_WIDTH, SERVER, VERSION, type BrainState, type Credentials, type Viewport } from './config.js';
-import { installDebuggerEndpoints, lastCaptureStats, useDebuggerChannel } from './debugger-socket.js';
+import { installDebuggerEndpoints, lastCaptureStats, liveCaptureStats, useDebuggerChannel } from './debugger-socket.js';
+import { HiddenRanges, probeVisibility, watched, type PageVisibility } from './visibility.js';
 import { WebCodecsStreamingEncoder } from './encoder.js';
 import { scalePng } from './scale-image.js';
 import { encodeValue } from './values.js';
@@ -24,7 +25,7 @@ type Driver = Awaited<ReturnType<WebDriverBrowserDriver['createContext']>> & {
 };
 const METHODS = ['open', 'goto', 'currentUrl', 'readPage', 'pageText', 'screenshot', 'pointer', 'gesture', 'formInput', 'typeText', 'pressKey', 'scrollBy',
   'redactSensitiveText', 'startRecording', 'stopRecording', 'markDemoMoment', 'dispose'];
-const FORWARDED = ['local_sign_in_required', 'local_navigation_blocked', 'local_method_forbidden', 'extension_tab_closed', 'extension_debugger_unavailable'];
+const FORWARDED = ['local_sign_in_required', 'local_navigation_blocked', 'local_method_forbidden', 'extension_tab_closed', 'extension_debugger_unavailable', 'recording_window_hidden'];
 
 // ---- service worker port ----
 let port: any;
@@ -103,7 +104,10 @@ async function api(path: string, body: unknown = {}, binary = false, timeoutMs =
 }
 
 // ---- recording session ----
-type Session = { tabId: number; driver: Driver; transport: CdpWebDriverTransport; product: URL; allowedOrigins: string[]; sessionPath: string; closed: boolean; encoder: WebCodecsStreamingEncoder; viewport: Viewport };
+type Session = { tabId: number; driver: Driver; transport: CdpWebDriverTransport; product: URL; allowedOrigins: string[]; sessionPath: string; closed: boolean; encoder: WebCodecsStreamingEncoder; viewport: Viewport;
+  channel: DebuggerChannel;
+  /** Where the page was not drawn during the recording that started at `hiddenFor` (recordingStartedAtMs). */
+  hidden: HiddenRanges; hiddenFor?: number };
 let session: Session | undefined;
 detachListeners.add((tabId) => { if (session?.tabId === tabId) session.closed = true; });
 
@@ -206,7 +210,7 @@ async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?:
       viewport: { ...viewport }, allowedOrigins, sessionState: new TextEncoder().encode('{"cookies":[],"origins":[]}'), allowDownload: false, allowPopup: false,
       onNavigation: (url: string) => { if (!allowedTarget(url, product, allowedOrigins)) throw new Error('local_navigation_blocked'); },
     }) as Driver;
-    session = { tabId, driver, transport: cdp, product, allowedOrigins, sessionPath, closed: false, encoder, viewport };
+    session = { tabId, driver, transport: cdp, product, allowedOrigins, sessionPath, closed: false, encoder, viewport, channel, hidden: new HiddenRanges() };
     await driver.goto(product.href);
     await guard(session);
     return await driver.currentUrl();
@@ -229,8 +233,26 @@ async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?:
   }
 }
 
+/** Whether this command found Chrome drawing the recording window; reported in its meta while recording. */
+let commandVisibility: PageVisibility | undefined;
+/** A command on the session, checked against Chrome not drawing the window while recording (see `watched`). */
+async function perform(active: Session, command: Command): Promise<unknown> {
+  const started = command.method === 'stopRecording' ? null : active.driver.recordingStartedAtMs ?? null;
+  if (started && active.hiddenFor !== started) { active.hidden = new HiddenRanges(); active.hiddenFor = started; }
+  const action = active.driver[command.method as keyof Driver];
+  if (typeof action !== 'function') throw new Error('local_method_forbidden');
+  return watched({
+    method: command.method, args: command.args, clock: started ? () => Date.now() - started : undefined, hidden: active.hidden,
+    probe: () => probeVisibility(active.channel), frames: () => liveCaptureStats()?.frames,
+    bringToFront: async () => { await worker('send', { tabId: active.tabId, method: 'Page.bringToFront', params: {} }).catch(() => undefined); },
+    seen: (state) => { commandVisibility = state; },
+    act: () => (action as (...args: unknown[]) => unknown).apply(active.driver, command.args),
+  });
+}
+
 async function run(command: Command): Promise<{ value?: unknown; error?: string; detail?: string; meta?: Record<string, unknown> }> {
   let value: unknown;
+  commandVisibility = undefined;
   try {
     if (typeof command.id !== 'string' || !Array.isArray(command.args) || !METHODS.includes(command.method)) throw new Error('local_method_forbidden');
     if (command.method === 'open') {
@@ -245,9 +267,7 @@ async function run(command: Command): Promise<{ value?: unknown; error?: string;
       const active = session;
       if (!active) throw new Error('extension_tab_closed');
       if (command.method !== 'stopRecording') await guard(active);
-      const action = active.driver[command.method as keyof Driver];
-      if (typeof action !== 'function') throw new Error('local_method_forbidden');
-      value = await (action as (...args: unknown[]) => unknown).apply(active.driver, command.args);
+      value = await perform(active, command);
       if (command.method !== 'stopRecording') await guard(active);
       if (command.method === 'stopRecording' && value && typeof value === 'object' && 'body' in value) {
         const video = (value as { body: Uint8Array }).body;
@@ -277,6 +297,9 @@ function meta() {
     recordingElapsedMs: driver.recordingStartedAtMs ? Date.now() - driver.recordingStartedAtMs : undefined,
     pointerTrail: driver.pointerTrail?.(), pointerTelemetry: driver.pointerTelemetry?.(), semanticTimeline: driver.semanticTimeline?.(),
     identitySightings: driver.identitySightings?.(),
+    // Whether Chrome was drawing the window at this command's check, and where it was not during the recording.
+    ...(commandVisibility ? { pageVisibility: commandVisibility } : {}),
+    ...(session!.hiddenFor !== undefined ? { hiddenRanges: session!.hidden.list() } : {}),
   };
 }
 

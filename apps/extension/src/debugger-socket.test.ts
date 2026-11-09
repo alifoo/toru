@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DebuggerChannel } from '../../../packages/browser/src/cdp-webdriver.js';
 import { DEBUGGER_ADDRESS } from './config.js';
-import { cssViewport, installDebuggerEndpoints, jpegSize, useDebuggerChannel } from './debugger-socket.js';
+import { cssViewport, installDebuggerEndpoints, jpegSize, liveCaptureStats, useDebuggerChannel } from './debugger-socket.js';
 
 const RealWebSocket = globalThis.WebSocket, realFetch = globalThis.fetch;
 afterEach(() => { globalThis.WebSocket = RealWebSocket; globalThis.fetch = realFetch; useDebuggerChannel(undefined); });
@@ -72,6 +72,18 @@ describe('Toru for Chrome screencast socket', () => {
     expect(messages.filter((message) => message.method === 'Page.screencastFrame').map((message) => message.params?.data)).toEqual(['ZnJhbWU=']);
     expect(sent).not.toContain('Page.captureScreenshot');
     socket.close();
+  });
+
+  it('counts the frames of the recording in progress, for telling a page Chrome stopped drawing', async () => {
+    const { socket, frame } = await screencast(2);
+    expect(liveCaptureStats()).toMatchObject({ mode: 'idle', frames: 0 });
+    const before = Date.now();
+    frame(1280, 720, jpeg(2560, 1440));
+    frame(1280, 720, jpeg(2560, 1440));
+    expect(liveCaptureStats()).toMatchObject({ mode: 'screencast', frames: 2 });
+    expect(liveCaptureStats()!.lastFrameAt).toBeGreaterThanOrEqual(before);
+    socket.close();
+    expect(liveCaptureStats()).toBeUndefined();
   });
 
   it('reads a JPEG\'s pixel size from its frame header', () => {

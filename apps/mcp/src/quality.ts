@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { reviewCamera, type CaptureObservation, type ExporterConfig } from '@content-layer/render-contract';
+import { reviewCamera, reviewCapture, type CaptureObservation, type ExporterConfig } from '@content-layer/render-contract';
 const run = promisify(execFile);
 
 export type QualityVerdict = {
@@ -17,9 +17,14 @@ export type QualityAssessor = (
  * Decides whether a rendered demo is worth delivering (and charging for): long enough, visibly changing, not a blank
  * frame. A video ffmpeg cannot read is not judged (`skipped`), so unit fixtures and odd encoders are never blocked.
  * With the render's config, a directed demo's camera is judged too: late on a click, or pumping (`reviewCamera`).
+ * A capture that missed what the agent did (its window hidden, so the page stopped drawing) is held as
+ * `capture_stalled` (`reviewCapture`), whatever the config.
  */
 export const assessDemo: QualityAssessor = async (videoPath, observation, config) => {
-  const camera = config && observation?.pointerTrail ? reviewCamera(config, observation as CaptureObservation) : [];
+  const camera = [
+    ...(observation ? reviewCapture(observation as CaptureObservation) : []),
+    ...(config && observation?.pointerTrail ? reviewCamera(config, observation as CaptureObservation) : []),
+  ];
   const metrics: QualityVerdict['metrics'] = {
     actions: observation?.semanticTimeline?.length ?? 0, pointerSamples: observation?.pointerTrail?.length ?? 0,
   };

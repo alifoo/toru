@@ -21,7 +21,7 @@ export default function ChromePage(){
     <li>Open the link in the Chrome where you installed the extension. It connects by itself; the page says <b>Chrome connected</b>.</li>
     <li>Ask for a demo. Your agent finds the connected Chrome with <code>extension_devices</code> and records with <code>recording_run</code>.</li>
    </ol>
-   <p>Each recording opens a new window on your product. Leave it open until the recording ends; Toru closes it. If the product asks you to sign in, sign in in that window and ask your agent to record again.</p>
+   <p>Each recording opens a new window on your product. Leave it open and in view until the recording ends; Toru closes it. Chrome does not draw a window that is minimized, covered by another app, or on another desktop or workspace, so nothing done there would be recorded: Toru pauses your agent until you bring the window back. If the product asks you to sign in, sign in in that window and ask your agent to record again.</p>
    <h2>What the extension can do</h2>
    <p>Toru controls only the window it opens for a recording. It starts on the product your agent asked to record and follows the demo wherever it goes, such as a consent screen or a checkout; Chrome shows a notice while it does. It cannot read your other tabs, and it never sends Toru your passwords, cookies or browser storage. A password or one-time-code field stops the recording instead of being recorded. The video of that window is uploaded to Toru to produce your demo. See <a className="text-link" href="/privacy#chrome">privacy details</a>.</p>
    <h2>Disconnect</h2>

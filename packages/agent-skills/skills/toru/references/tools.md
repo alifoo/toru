@@ -45,10 +45,11 @@ Toru records in two places only: the user's own Chrome (Toru for Chrome) and the
 - `plan_required` / `plan_invalid`: write or fix the plan and call again; the error includes a template. Nothing was recorded and no credit was used.
 - `desktop_control_not_allowed`: the Mac is capture only; ask the user to turn on "Let your agent operate the shared window" in Toru for Mac Settings, or use `desktop_recording_open`.
 - `extension_offline`: the paired Chrome is closed or the extension is off; ask the user to open Chrome.
+- `recording_window_hidden`: Chrome is not drawing the recording window (minimized, covered, or on another desktop/workspace), so Toru for Chrome refused the page action and nothing ran. Ask the user to bring the Toru window into view, `browser_observe`, then repeat the action. The same code appears as `warning` on replies while the window is not drawn; with `actionMissed: true` the last action ran unseen and the take will be held as `capture_stalled`.
 - `desktop_upload_pending`: the user is recording manually on the Mac; wait for `captured`.
 - `capture_interrupted`: the Mac stopped by itself; the user can Retry upload, then render.
 - `artifacts_not_ready`: render not finished; call `recording_status` again.
-- `quality_review` (`needsReview: true`): the rendered video failed the delivery check (`blank_frames`, `static_video`, `too_short`, and for a directed demo `camera_late` or `zoom_pumping`); not delivered, no credit used. Re-record, or `recording_render` with `acceptReview:true` on explicit user request.
+- `quality_review` (`needsReview: true`): the rendered video failed the delivery check (`blank_frames`, `static_video`, `too_short`, `capture_stalled` when Chrome stopped drawing the recording window while the flow went on, and for a directed demo `camera_late` or `zoom_pumping`); not delivered, no credit used. Re-record, or `recording_render` with `acceptReview:true` on explicit user request.
 - `plan_needs_attention`: a presentation plan points nothing out; add point, trace, sweep or highlight steps on the content screens.
 - `run_in_progress`: one run at a time per account; wait for `recording_run_status` or cancel.
 - `run_not_agent_driving`: the run is not waiting for you to drive; follow `recording_run_status`.

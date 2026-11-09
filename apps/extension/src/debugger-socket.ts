@@ -30,6 +30,8 @@ const syntheticIds = 1_000_000_000;
 
 type Frame = { data: string; metadata?: { deviceWidth?: number; deviceHeight?: number }; sessionId?: number };
 export type CaptureStats = { mode: 'screencast' | 'rendered' | 'idle'; frames: number };
+/** The open recording socket, for the live frame count (`liveCaptureStats`). */
+let open: DebuggerSocket | undefined;
 
 class DebuggerSocket extends EventTarget {
   readyState = 0;
@@ -37,6 +39,7 @@ class DebuggerSocket extends EventTarget {
   private wanted: { width: number; height: number; quality: number } | undefined;
   private mode: CaptureStats['mode'] = 'idle';
   private frames = 0;
+  private lastFrameAt: number | undefined;
   private nextSynthetic = syntheticIds;
   constructor(private readonly channel: DebuggerChannel, private readonly scale = 1) {
     super();
@@ -60,11 +63,14 @@ class DebuggerSocket extends EventTarget {
       }
       if (this.mode !== 'screencast') return;
       this.frames++;
+      this.lastFrameAt = Date.now();
       this.emit({ method, params });
     });
-    queueMicrotask(() => { this.readyState = 1; this.dispatchEvent(new Event('open')); });
+    queueMicrotask(() => { this.readyState = 1; open = this; this.dispatchEvent(new Event('open')); });
   }
-  stats(): CaptureStats { return { mode: this.mode, frames: this.frames }; }
+  stats(): CaptureStats & { lastFrameAt?: number } {
+    return { mode: this.mode, frames: this.frames, ...(this.lastFrameAt !== undefined ? { lastFrameAt: this.lastFrameAt } : {}) };
+  }
   private emit(message: unknown) {
     this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) }));
   }
@@ -80,6 +86,7 @@ class DebuggerSocket extends EventTarget {
           const shot = await this.channel.send('Page.captureScreenshot', { format: 'jpeg', quality: this.wanted.quality, optimizeForSpeed: true }) as { data: string };
           if (this.readyState !== 1 || this.mode !== 'rendered') break;
           this.frames++;
+          this.lastFrameAt = Date.now();
           const viewport = cssViewport(this.wanted, this.scale);
           this.emit({ method: 'Page.screencastFrame', params: { data: shot.data, sessionId: this.nextSynthetic++, metadata: { deviceWidth: viewport.width, deviceHeight: viewport.height, synthetic: true } } });
         } catch {
@@ -110,6 +117,7 @@ class DebuggerSocket extends EventTarget {
     if (this.readyState === 3) return;
     this.readyState = 3;
     this.unsubscribe?.();
+    if (open === this) open = undefined;
     lastStats = { mode: this.rendered ? 'rendered' : this.mode, frames: this.frames };
     this.dispatchEvent(new Event('close'));
   }
@@ -141,6 +149,11 @@ export function cssViewport(wanted: { width: number; height: number }, scale: nu
 let lastStats: CaptureStats = { mode: 'idle', frames: 0 };
 /** How the last recording was captured, for diagnostics. */
 export function lastCaptureStats() { return lastStats; }
+/**
+ * The recording in progress: how many frames reached the recorder and when the last one did. A page Chrome is not
+ * drawing (its window hidden, minimized, covered or on another desktop) sends none, whatever is done to it.
+ */
+export function liveCaptureStats(): (CaptureStats & { lastFrameAt?: number }) | undefined { return open?.stats(); }
 
 export function installDebuggerEndpoints() {
   const realFetch = globalThis.fetch.bind(globalThis);

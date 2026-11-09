@@ -369,3 +369,40 @@ it('leaves needs_input as soon as the agent answers the field', async () => {
   expect((await h.controller.call(h.owner, 'recording_run_status', { runId: started.runId, waitMs: 0 })).structuredContent).toMatchObject({ status: 'navigating' });
   await h.controller.call(h.owner, 'recording_run_cancel', { runId: started.runId });
 });
+
+it('tells a driving agent that Chrome stopped drawing the recording window until a page call finds it back', async () => {
+  const h = await harness();
+  h.controller.resultHoldMs = 0;
+  const started = (await h.controller.call(h.owner, 'recording_run', { plan: PLAN, navigator: 'agent', requestId: randomUUID(), url: 'https://app.example.com', goal: 'Create a demo item' })).structuredContent as Record<string, unknown>;
+  expect(await driving(h.controller, h.owner, String(started.runId))).not.toHaveProperty('warning');
+  const recorderCall = h.recorder.call.getMockImplementation()!;
+  h.recorder.call.mockImplementationOnce(async () => reply({ id: h.recorder.sessionId, status: 'recording', warning: { code: 'recording_window_hidden', message: 'hidden' } }));
+  await h.controller.call(h.owner, 'browser_click', { id: h.recorder.sessionId, ref: 'e1' });
+  expect(await driving(h.controller, h.owner, String(started.runId))).toMatchObject({ warning: { code: 'recording_window_hidden' } });
+  // A refused action keeps it.
+  h.recorder.call.mockImplementationOnce(async () => { throw new Error('recording_window_hidden'); });
+  await expect(h.controller.call(h.owner, 'browser_type', { id: h.recorder.sessionId, text: 'Demo' })).rejects.toThrow('recording_window_hidden');
+  expect(await driving(h.controller, h.owner, String(started.runId))).toMatchObject({ warning: { code: 'recording_window_hidden' } });
+  // A status call on the session does not clear it; an observation that finds the window back does.
+  await h.controller.call(h.owner, 'recording_status', { id: h.recorder.sessionId });
+  expect(await driving(h.controller, h.owner, String(started.runId))).toHaveProperty('warning');
+  h.recorder.call.mockImplementation(recorderCall);
+  await h.controller.call(h.owner, 'browser_observe', { id: h.recorder.sessionId });
+  expect(await driving(h.controller, h.owner, String(started.runId))).not.toHaveProperty('warning');
+  await h.controller.call(h.owner, 'recording_run_finish', { runId: started.runId, outcome: 'reached' });
+  await settled(h.controller, h.owner, String(started.runId));
+});
+
+it('explains capture_stalled when the delivery check holds a take for it', async () => {
+  const h = await harness({ review: true });
+  h.recorder.call.mockImplementation(((original) => async (owner: string, name: string, args: unknown) => {
+    const result = await original(owner, name, args);
+    const data = result.structuredContent as Record<string, unknown>;
+    if (name === 'recording_status' && data.needsReview) return reply({ ...data, qualityReview: { passed: false, reasons: ['capture_stalled'] } });
+    return result;
+  })(h.recorder.call.getMockImplementation()!));
+  const started = (await h.controller.call(h.owner, 'recording_run', { plan: PLAN, requestId: randomUUID(), url: 'https://app.example.com', goal: 'Create a demo item' })).structuredContent as Record<string, unknown>;
+  const held = await settled(h.controller, h.owner, String(started.runId));
+  expect(held).toMatchObject({ status: 'needs_review', qualityReasons: ['capture_stalled'] });
+  expect(String(held.instruction)).toContain('keep the Toru window visible');
+});
