@@ -19,6 +19,7 @@ import {
   scaleForTarget,
   smoothStalledTravels,
   finalResultEndMs,
+  wideEndingMs,
   wallpaperChoices,
   layerTimeline,
   layerCropAt,
@@ -1326,6 +1327,19 @@ describe("the ending", () => {
       const lastFrameMs = trims.find(trim => trim.endMs >= durationMs)?.startMs ?? durationMs;
       for (const zoom of zooms) expect(zoom.endMs + 1_016).toBeLessThanOrEqual(lastFrameMs);
     }
+  });
+
+  it("keeps the wide ending when the screen is still after the result", () => {
+    const config = buildExporterConfig({ ...observation, durationMs: 30_000, directed: true, pointerTrail: [], pointerTelemetry: [],
+      stillRanges: [{ startMs: 20_300, endMs: 30_000 }],
+      semanticTimeline: [{ type: 'result', atMs: 20_000, ref: null, element: 'Results', focus: { x: 0.4, y: 0.1, width: 0.5, height: 0.2 } }],
+    }, { compressPauses: true });
+    const zoom = (config.zoomRegions as Array<{ intent?: string; endMs: number }>).find(region => region.intent === 'result')!;
+    const trims = config.trimRegions as Array<{ startMs: number; endMs: number }>;
+    // Every frame from the camera's release to the end of the wide hold is kept.
+    const kept = (from: number, to: number) => (to - from) - trims.reduce((cut, trim) =>
+      cut + Math.max(0, Math.min(to, trim.endMs) - Math.max(from, trim.startMs)), 0);
+    expect(kept(zoom.endMs, zoom.endMs + 1_016 + wideEndingMs)).toBe(1_016 + wideEndingMs);
   });
 
   it("holds the result as long as the capture allows, then releases it", () => {

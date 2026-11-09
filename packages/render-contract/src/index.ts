@@ -1540,6 +1540,9 @@ export function buildExporterConfig(
       { startMs: region.startMs - cameraLeadMs - 80, endMs: region.startMs + 550 },
       { startMs: region.endMs - 100, endMs: region.endMs + cameraReleaseMs + 50 },
     ]);
+    // The wide shot that ends the video is a still picture on purpose: it is never cut as a pause.
+    const payoff = zoomRegions.filter(region => region.intent === "result").at(-1);
+    if (payoff) transitions.push({ startMs: payoff.endMs - 100, endMs: payoff.endMs + cameraReleaseMs + wideEndingMs + 50 });
     for (const span of subtractRanges(removable, [...transitions, ...clickReserves])) {
       if (span.endMs - span.startMs >= minimumCutMs) directedCuts.push({ id: `still-${directedCuts.length}`, ...span });
     }
