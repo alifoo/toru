@@ -15,6 +15,7 @@ import {
   type WebDriverTransport,
   opensNewShot,
   containerFrom,
+  circleDurationMs,
   circlePoint,
   humanTravelPoint,
   underlinePoint,
@@ -1764,6 +1765,13 @@ describe("human travel", () => {
 
 describe("gestures", () => {
   const box = { x: 400, y: 300, width: 200, height: 40 };
+
+  it("paces a loop by its size: a title takes about a second, never a flick across the window", () => {
+    // The Linear take of 09/11/2026 looped around a row as wide as the window in under a second.
+    expect(circleDurationMs({ x: 0, y: 0, width: 180, height: 20 }, 12)).toBe(1_000);
+    expect(circleDurationMs({ x: 0, y: 0, width: 640, height: 30 }, 12)).toBeGreaterThan(1_500);
+    expect(circleDurationMs({ x: 0, y: 0, width: 1890, height: 44 }, 12)).toBe(2_000);
+  });
 
   it("loops once around the element from its upper left, and strokes under it left to right", () => {
     const start = circlePoint(box, 12, 0);

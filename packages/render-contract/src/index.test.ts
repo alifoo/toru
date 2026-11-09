@@ -1275,7 +1275,9 @@ describe("directed pacing", () => {
       const gap = regions[index]!.startMs - regions[index - 1]!.endMs;
       expect(gap === 0 || gap >= 2_000).toBe(true);
     }
-    expect(regions).toHaveLength(1);
+    // Both clicks keep their zoom: the camera holds in and travels from one to the other.
+    expect(regions).toHaveLength(2);
+    expect(regions[1]!.startMs).toBe(regions[0]!.endMs);
   });
 });
 
@@ -1370,8 +1372,10 @@ describe("camera review", () => {
     const apart = proposeZoomRegions(pointers, 20_000, [], [], true);
     const together = proposeZoomRegions(pointers, 20_000, [], [], true, [{ startMs: 4_500, endMs: 12_500 }]);
     expect(apart).toHaveLength(2);
-    // Far apart on screen and close in time once cut: the second click is filmed wide instead of a quick out-and-in.
-    expect(together).toHaveLength(1);
+    // Far apart on screen and close in time once cut: the camera holds in and travels, never a quick out-and-in, and
+    // neither click loses its zoom.
+    expect(together).toHaveLength(2);
+    expect(together[1]!.startMs).toBe(together[0]!.endMs);
   });
 
   it("does not set the camera off toward a result or a gesture marked right after a click", () => {
