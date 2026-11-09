@@ -1361,7 +1361,7 @@ body { background:
 
 .st-sheet { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); grid-auto-flow:dense; gap:40px 28px; margin-top:40px; padding:44px; border-radius:18px; background-color:#eef2f4; background-image:radial-gradient(#cdd6dc 1px,transparent 1px); background-size:20px 20px; box-shadow:inset 0 0 0 1px var(--st-line); }
 .st-take { margin:0; min-width:0; }
-.st-take-lg { grid-column:span 4; grid-row:span 2; } .st-take-md,.st-take-sm { grid-column:span 2; }
+.st-take-lg { grid-column:span 4; grid-row:span 2; } .st-take-md,.st-take-sm { grid-column:span 2; } .st-take-half { grid-column:span 3; } .st-take-half .st-frame,.st-take-half .st-held { aspect-ratio:32/9; }
 .st-take figcaption { display:flex; align-items:baseline; gap:8px; margin-bottom:10px; font-size:12px; color:#64727d; white-space:nowrap; overflow:hidden; }
 .st-take figcaption b { font-weight:500; color:var(--ink); overflow:hidden; text-overflow:ellipsis; }
 .st-take-play { position:absolute; inset:0; display:grid; place-items:center; border:0; border-radius:9px; background:linear-gradient(0deg,#22313b26,#22313b00 60%); opacity:0; transition:opacity .18s; }
@@ -1412,7 +1412,7 @@ body { background:
 @media (max-width:960px) {
  .st-flow,.st-connect,.st-faq { grid-template-columns:minmax(0,1fr); }
  .st-sheet { grid-template-columns:repeat(2,minmax(0,1fr)); padding:24px; gap:28px 20px; }
- .st-take-lg { grid-column:1/-1; grid-row:auto; } .st-take-md,.st-take-sm { grid-column:span 1; }
+ .st-take-lg { grid-column:1/-1; grid-row:auto; } .st-take-md,.st-take-sm,.st-take-half { grid-column:span 1; }
  .lw-footer { grid-template-columns:1fr 1fr; }
 }
 @media (max-width:760px) {
@@ -1428,7 +1428,7 @@ body { background:
  .st-next { display:none; }
  .st-section { padding-top:96px; }
  .st-sheet { grid-template-columns:minmax(0,1fr); }
- .st-take-md,.st-take-sm { grid-column:auto; }
+ .st-take-md,.st-take-sm,.st-take-half { grid-column:auto; }
  .st-features { grid-template-columns:minmax(0,1fr); }
  .st-row:first-child { display:none; }
  .st-row { grid-template-columns:minmax(0,1fr); gap:4px; padding:16px 18px; }

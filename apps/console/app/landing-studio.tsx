@@ -10,14 +10,14 @@ type Scene={id:string;tab:string;title:string;place:string;tool:string;prompt:st
 
 /** The three things the hero window can show. Prompts and recordings are real Toru recordings from the landing set. */
 const scenes:Scene[]=[
- {id:'mac',tab:'Mac app',title:'linear-csv-export',place:'Linear on your Mac',tool:'desktop_recording_run',
-  prompt:'Record a demo of our Linear on my Mac: mark “CSV export times out on large workspaces” as Done, go back to the issues and create “Record the launch video”.',
-  steps:[{label:'Open',target:'Issues'},{label:'Open',target:'CSV export times out…'},{label:'Set status to',target:'Done',expect:'the issue moves to Done'},{label:'Back to',target:'Issues'},{label:'Create',target:'Record the launch video'},{label:'End on the new issue'}],current:2,
-  poster:'/landing/linear.jpg',video:'/landing/linear.mp4',length:'00:34',alt:'Linear on a Mac: an issue marked Done, then a new issue created',cursor:[19,22],camera:[2,6]},
- {id:'chrome',tab:'Web app in your Chrome',title:'notion-roadmap',place:'Notion in your Chrome',tool:'recording_run',
-  prompt:'Record the new roadmap flow on our Notion: open the Roadmap, switch to the sprint board and open the first card.',
-  steps:[{label:'Open',target:'Roadmap'},{label:'Switch to',target:'By sprint',expect:'the sprint board shows'},{label:'Open the first card'},{label:'End on the card'}],current:1,
-  poster:'/landing/notion.jpg',video:'/landing/notion.mp4',length:'00:11',alt:'Notion in Chrome: the roadmap switched to the sprint board and a card opened',cursor:[15,35],camera:[2,14]},
+ {id:'linear',tab:'Linear',title:'linear-issue-done',place:'Linear in your Chrome',tool:'recording_run',
+  prompt:'Record a demo of our Linear: open “Invite teammates from the empty state”, mark it Done, then create “Ship the changelog video” and end on the issue list.',
+  steps:[{label:'Open',target:'Invite teammates from the empty state'},{label:'Open',target:'Status'},{label:'Set status to',target:'Done',expect:'the issue moves to Done'},{label:'Create',target:'Ship the changelog video'},{label:'End on the issue list'}],current:2,
+  poster:'/landing/linear.jpg',video:'/landing/linear.mp4',length:'00:42',alt:'Linear in Chrome: an issue marked Done, then a new issue created',cursor:[50,34],camera:[28,18]},
+ {id:'chrome',tab:'Notion',title:'notion-roadmap',place:'Notion in your Chrome',tool:'recording_run',
+  prompt:'Present our Toru page in Notion: the delivery promise, the four steps, then the roadmap board, ending on the card “Every video ends on a wide shot”.',
+  steps:[{label:'Underline',target:'the delivery promise'},{label:'Sweep',target:'the four steps'},{label:'Read down to',target:'Roadmap'},{label:'Sweep',target:'Complete',expect:'the shipped cards'},{label:'Open',target:'Every video ends on a wide shot'},{label:'End on its description'}],current:3,
+  poster:'/landing/notion.jpg',video:'/landing/notion.mp4',length:'00:30',alt:'Notion in Chrome: a project page read down to its roadmap, and a shipped card opened',cursor:[46,56],camera:[30,30]},
  {id:'brand',tab:'Your brand',title:'Brand · linear.app',place:'saved once, used on every demo',tool:'brand',
   prompt:'Colors, background, padding, a logo, intro and outro cards, a GIF and the output size, saved per product domain. Your agent never has to ask.',
   steps:[{label:'Background',target:'Sky'},{label:'Padding',target:'64 px'},{label:'Logo',target:'corner mark'},{label:'Intro card',target:'title before the flow'},{label:'Outro card',target:'call to action'},{label:'Output',target:'MP4 and GIF'}],current:3,
@@ -99,7 +99,7 @@ export function StudioWindow({appUrl}:{appUrl:string}){
     </div>
 
     <aside className="st-panel st-inspector" aria-label="Output settings">
-     <div className="st-insp-head"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/></svg><b>Output frame</b><span>{brand||scene.id==='mac'?'linear.app':'notion.so'}</span></div>
+     <div className="st-insp-head"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/></svg><b>Output frame</b><span>{brand||scene.id==='linear'?'linear.app':'notion.so'}</span></div>
      <div className="st-insp">
       <p>Background</p>
       <div className="st-swatches" role="group" aria-label="Background">{backgrounds.map(value=><button key={value} type="button" className={`st-bg-${value}`} aria-pressed={background===value} aria-label={value} onClick={()=>setBackground(value)}/>)}</div>
@@ -155,10 +155,9 @@ function Composer({appUrl}:{appUrl:string}){
 
 type Take={id:string;name:string;meta:string;poster:string;video:string;alt:string;background:Background;size:'lg'|'md'|'sm'};
 const takes:Take[]=[
- {id:'linear',name:'linear-issue-done.mp4',meta:'Mac · 34 s',poster:'/landing/linear.jpg',video:'/landing/linear.mp4',alt:'Linear on a Mac: an issue marked Done, then a new issue created',background:'mist',size:'lg'},
- {id:'notion',name:'notion-roadmap.gif',meta:'Chrome · 11 s',poster:'/landing/notion.jpg',video:'/landing/notion.mp4',alt:'Notion in Chrome: the roadmap switched to the sprint board',background:'mist',size:'md'},
- {id:'todo',name:'todomvc-add.mp4',meta:'Chrome · 35 s',poster:'/landing/route-chrome.jpg',video:'/landing/route-chrome.mp4',alt:'TodoMVC in Chrome: a todo typed and added',background:'mist',size:'md'},
- {id:'skills',name:'toru-skills-readme.mp4',meta:'Mac · 33 s',poster:'/landing/route-mac.jpg',video:'/landing/route-mac.mp4',alt:'An editor on a Mac: the Toru skills README',background:'mist',size:'sm'},
+ {id:'linear',name:'linear-issue-done.mp4',meta:'Chrome · 42 s',poster:'/landing/linear-end.jpg',video:'/landing/linear.mp4',alt:'Linear in Chrome: an issue marked Done, then a new issue created',background:'mist',size:'lg'},
+ {id:'notion',name:'notion-roadmap.mp4',meta:'Chrome · 30 s',poster:'/landing/notion-end.jpg',video:'/landing/notion.mp4',alt:'Notion in Chrome: a project page read down to its roadmap, and a shipped card opened',background:'mist',size:'md'},
+ {id:'wikipedia',name:'wikipedia-screencast.mp4',meta:'Chrome · 27 s',poster:'/landing/wikipedia.jpg',video:'/landing/wikipedia.mp4',alt:'Wikipedia in Chrome: the Screencast article searched, read and a sentence highlighted',background:'mist',size:'md'},
 ];
 
 /** Finished demos on a light table. A recording loads only when someone presses play. */
@@ -175,11 +174,11 @@ export function ContactSheet(){
     </div>
    </div>
   </figure>)}
-  <figure className="st-take st-take-sm">
+  <figure className="st-take st-take-sm st-take-half">
    <figcaption><b>Intro card</b><span>Toru Team</span></figcaption>
    <div className="st-frame st-bg-ocean"><div className="st-card"><span>Toru Team · Linear</span><b>Record the launch video</b></div></div>
   </figure>
-  <figure className="st-take st-take-sm st-take-held">
+  <figure className="st-take st-take-sm st-take-half st-take-held">
    <figcaption><b>take-02 · frozen</b><span>held back, not charged</span></figcaption>
    <div className="st-held" aria-label="A frozen take, held back by the delivery check"><span>Held by the delivery check</span></div>
   </figure>
