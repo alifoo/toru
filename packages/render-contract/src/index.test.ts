@@ -18,6 +18,7 @@ import {
   scaleForDepth,
   scaleForTarget,
   smoothStalledTravels,
+  finalResultEndMs,
   wallpaperChoices,
   layerTimeline,
   layerCropAt,
@@ -102,9 +103,10 @@ describe("zoom regions", () => {
     expect(zooms.find(z => z.intent === 'setup')).toBeUndefined();
     expect(zooms.find(z => z.intent === 'type')).toMatchObject({ startMs: 3_700, endMs: 8_700 });
     expect(zooms.filter(z => z.startMs < 13_300).every(z => z.endMs <= 12_300)).toBe(true);
-    expect(zooms.at(-1)?.endMs).toBeGreaterThan(30_000);
+    // The payoff is held, then the camera comes back out before the video ends: never an ending on a zoom.
+    expect(zooms.at(-1)).toMatchObject({ intent: 'result', startMs: 20_000, endMs: 23_200 });
     expect(config.suppressDwellZooms).toBe(true);
-    expect(config.trimRegions).toContainEqual({ id: 'final-hold', startMs: 24_000, endMs: 30_000 });
+    expect(config.trimRegions).toContainEqual({ id: 'final-hold', startMs: 25_416, endMs: 30_000 });
     for (const trim of config.trimRegions as Array<{ startMs: number; endMs: number }>) {
       expect(trim.endMs <= 3_000 || trim.startMs >= 9_700).toBe(true);
     }
@@ -1309,5 +1311,43 @@ describe("gesture camera", () => {
     const regions = proposeZoomRegions(pointers, 50_000, [], timeline, true);
     expect(regions.some(region => region.intent === "emphasis")).toBe(true);
     expect(reviewCamera({ zoomRegions: regions }, { pointerTrail: pointers, directed: true })).toEqual([]);
+  });
+});
+
+describe("the ending", () => {
+  it("never ends on a zoom, even when the capture stops soon after the result", () => {
+    for (const after of [1_500, 3_000, 4_500, 8_000]) {
+      const durationMs = 20_000 + after;
+      const config = buildExporterConfig({ ...observation, durationMs, directed: true, pointerTrail: [], pointerTelemetry: [],
+        semanticTimeline: [{ type: 'result', atMs: 20_000, ref: null, element: 'Results', focus: { x: 0.4, y: 0.1, width: 0.5, height: 0.2 } }],
+      }, { compressPauses: true });
+      const zooms = config.zoomRegions as Array<{ startMs: number; endMs: number }>;
+      const trims = config.trimRegions as Array<{ startMs: number; endMs: number }>;
+      const lastFrameMs = trims.find(trim => trim.endMs >= durationMs)?.startMs ?? durationMs;
+      for (const zoom of zooms) expect(zoom.endMs + 1_016).toBeLessThanOrEqual(lastFrameMs);
+    }
+  });
+
+  it("holds the result as long as the capture allows, then releases it", () => {
+    expect(finalResultEndMs(20_000, 30_000)).toBe(23_200);
+    expect(finalResultEndMs(20_000, 24_000)).toBe(21_784);
+    expect(finalResultEndMs(20_000, 23_000)).toBe(21_500);
+    expect(finalResultEndMs(20_000, 21_000)).toBe(20_000);
+  });
+});
+
+describe("highlight cursor", () => {
+  it("keeps a highlight's stalled travel on the page's clock instead of setting off late", () => {
+    // A highlight whose page took 250 ms a step (each step also grows the selection), so the drag lasted 2.25 s for a
+    // 432 px line the planner would cross in under 0.8 s. Each point is where the selection had grown to at that moment.
+    const steps: CapturePointerSample[] = Array.from({ length: 10 }, (_, index) =>
+      ({ atMs: 10_000 + index * 250, x: 0.2 + index * (0.3 / 9), y: 0.3, kind: 'move', shape: 'text' }));
+    const timed = smoothStalledTravels(steps, 1_440, 900, [{ startMs: 9_900, endMs: 12_500 }]);
+    const redrawn = smoothStalledTravels(steps, 1_440, 900);
+    const at = (samples: CapturePointerSample[], ms: number) => samples.filter(sample => sample.atMs <= ms).at(-1)!.x;
+    // Halfway through, the timed cursor is where the page put it; the redrawn one has not left yet.
+    expect(at(timed, 11_125)).toBeCloseTo(0.35, 2);
+    expect(at(redrawn, 11_125)).toBeLessThan(0.21);
+    expect(timed.at(-1)).toMatchObject({ atMs: 12_250, x: 0.5 });
   });
 });

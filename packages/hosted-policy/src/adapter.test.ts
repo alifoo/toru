@@ -472,13 +472,13 @@ it('applies Free duration, deduplicates admission, charges only delivery and nev
   expect(await f.open(requestId)).toBe(id);expect(f.driver.goto).toHaveBeenCalledTimes(1);
   await expect(f.recorder.call(f.owner,'session_open',{url:'https://other.example.com',requestId})).rejects.toThrow('request_id_conflict');
   expect(await f.usage()).toMatchObject({available:9,reserved:1,used:0});
-  expect((await f.recorder.call(f.owner,'recording_status',{id,waitMs:0})).structuredContent!.remainingSessionMs).toBeLessThanOrEqual(600000);
+  expect((await f.recorder.call(f.owner,'recording_status',{id,waitMs:0})).structuredContent!.remainingSessionMs).toBeLessThanOrEqual(900000);
   expect((await f.recorder.operationalMetrics()).product).toMatchObject({computeUsage:{groups:expect.arrayContaining([
-    expect.objectContaining({cohort:'unclassified',kind:'browser_ms',reservations:1,settledMs:0,unsettledReservations:1,unsettledReservedMs:600000}),
+    expect.objectContaining({cohort:'unclassified',kind:'browser_ms',reservations:1,settledMs:0,unsettledReservations:1,unsettledReservedMs:900000}),
   ])},admissionOutcomes:{groups:expect.arrayContaining([
     expect.objectContaining({cohort:'unclassified',source:'free',admittedJobs:1,committed:0,released:0,reserved:1}),
   ])},computeByOutcome:{groups:expect.arrayContaining([
-    expect.objectContaining({cohort:'unclassified',source:'free',state:'reserved',kind:'browser_ms',jobs:1,reservations:1,settledMs:0,unsettledReservedMs:600000}),
+    expect.objectContaining({cohort:'unclassified',source:'free',state:'reserved',kind:'browser_ms',jobs:1,reservations:1,settledMs:0,unsettledReservedMs:900000}),
   ])}});
   await capture(f,id);
   f.render.mockRejectedValueOnce(new Error('encoder failure'));
@@ -526,7 +526,7 @@ it('applies the paid cycle policy to a new recording and charges its subscriptio
     const now=Date.now();
     ledger.grantCreatorCycle(f.owner,'sub_123456789ABC','in_123456789ABC',now-1000,now+30*86400000,now);
   }finally{db.close();}
-  expect(await f.usage()).toMatchObject({available:50,policy:{version:'creator-v1',captureMs:300000,videoRetentionMs:30*86400000}});
+  expect(await f.usage()).toMatchObject({available:50,policy:{version:'creator-v1',captureMs:600000,videoRetentionMs:30*86400000}});
   const id=await f.open();
   expect((await f.recorder.call(f.owner,'recording_status',{id,waitMs:0})).structuredContent!.remainingSessionMs)
     .toBeGreaterThan(600000);

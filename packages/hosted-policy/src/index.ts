@@ -5,8 +5,8 @@ export interface TransactionalStore {
   connection:DatabaseSync;
   transaction<T>(work:()=>T):T;
 }
-export const freePolicy=Object.freeze({version:'free-v1',videos:10,captureMs:120_000,sessionMs:600_000,rerenders:2,rawRetentionMs:86_400_000,videoRetentionMs:7*86_400_000});
-export const creatorPolicy=Object.freeze({version:'creator-v1',videos:50,captureMs:300_000,sessionMs:1_200_000,rerenders:2,rawRetentionMs:86_400_000,videoRetentionMs:30*86_400_000});
+export const freePolicy=Object.freeze({version:'free-v1',videos:10,captureMs:300_000,sessionMs:900_000,rerenders:2,rawRetentionMs:86_400_000,videoRetentionMs:7*86_400_000});
+export const creatorPolicy=Object.freeze({version:'creator-v1',videos:50,captureMs:600_000,sessionMs:1_500_000,rerenders:2,rawRetentionMs:86_400_000,videoRetentionMs:30*86_400_000});
 /**
  * Studio records for twenty minutes in one take, inside a forty-minute session: the most the capture path holds safely
  * today. Toru for Chrome encodes the whole take in memory and uploads it in one request of at most 512 MB

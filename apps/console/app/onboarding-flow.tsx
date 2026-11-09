@@ -77,7 +77,7 @@ export function OnboardingFlow({ onFinish, mode = "setup" }: { onFinish: () => P
   const [client, setClient] = useState<Client>("claude-code"), [clip, setClip] = useState(false);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [domain, setDomain] = useState(""), [accent, setAccent] = useState("#405f6d"), [logo, setLogo] = useState<string>();
-  const [background, setBackground] = useState<string | undefined>("toru-sky"), [padding, setPadding] = useState(30);
+  const [background, setBackground] = useState<string | undefined>("toru-mist"), [padding, setPadding] = useState(30);
   const [flow, setFlow] = useState(""), [app, setApp] = useState(""), [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false), [note, setNote] = useState("");
   const [connectUrl, setConnectUrl] = useState(""), [macSetup, setMacSetup] = useState<MacSetup>(), [codeCopied, setCodeCopied] = useState(false);

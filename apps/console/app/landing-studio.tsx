@@ -23,14 +23,14 @@ const scenes:Scene[]=[
   steps:[{label:'Background',target:'Sky'},{label:'Padding',target:'64 px'},{label:'Logo',target:'corner mark'},{label:'Intro card',target:'title before the flow'},{label:'Outro card',target:'call to action'},{label:'Output',target:'MP4 and GIF'}],current:3,
   poster:'/landing/linear.jpg',video:'/landing/linear.mp4',length:'00:34',alt:'An intro card in the brand saved for linear.app',cursor:[0,0],camera:[0,0],card:true},
 ];
-const backgrounds=['sky','aurora','mint','peach','mist','ocean'] as const;
+const backgrounds=['sky','slate','mint','peach','mist','ocean'] as const;
 type Background=typeof backgrounds[number];
 const widths=[1280,1920,2560] as const;
 
 /** The hero: Toru's studio, drawn from what a real run shows. Its controls work; the composer starts onboarding. */
 export function StudioWindow({appUrl}:{appUrl:string}){
  const [sceneId,setSceneId]=useState(scenes[0]!.id),[playing,setPlaying]=useState(false);
- const [background,setBackground]=useState<Background>('sky'),[width,setWidth]=useState<typeof widths[number]>(1920);
+ const [background,setBackground]=useState<Background>('mist'),[width,setWidth]=useState<typeof widths[number]>(1920);
  const [zoom,setZoom]=useState(true),[glide,setGlide]=useState(true),[gif,setGif]=useState(true);
  const scene=scenes.find(item=>item.id===sceneId)!;
  const pick=(id:string)=>{setSceneId(id);setPlaying(false);};
@@ -155,9 +155,9 @@ function Composer({appUrl}:{appUrl:string}){
 
 type Take={id:string;name:string;meta:string;poster:string;video:string;alt:string;background:Background;size:'lg'|'md'|'sm'};
 const takes:Take[]=[
- {id:'linear',name:'linear-issue-done.mp4',meta:'Mac · 34 s',poster:'/landing/linear.jpg',video:'/landing/linear.mp4',alt:'Linear on a Mac: an issue marked Done, then a new issue created',background:'sky',size:'lg'},
- {id:'notion',name:'notion-roadmap.gif',meta:'Chrome · 11 s',poster:'/landing/notion.jpg',video:'/landing/notion.mp4',alt:'Notion in Chrome: the roadmap switched to the sprint board',background:'mint',size:'md'},
- {id:'todo',name:'todomvc-add.mp4',meta:'Chrome · 35 s',poster:'/landing/route-chrome.jpg',video:'/landing/route-chrome.mp4',alt:'TodoMVC in Chrome: a todo typed and added',background:'peach',size:'md'},
+ {id:'linear',name:'linear-issue-done.mp4',meta:'Mac · 34 s',poster:'/landing/linear.jpg',video:'/landing/linear.mp4',alt:'Linear on a Mac: an issue marked Done, then a new issue created',background:'mist',size:'lg'},
+ {id:'notion',name:'notion-roadmap.gif',meta:'Chrome · 11 s',poster:'/landing/notion.jpg',video:'/landing/notion.mp4',alt:'Notion in Chrome: the roadmap switched to the sprint board',background:'mist',size:'md'},
+ {id:'todo',name:'todomvc-add.mp4',meta:'Chrome · 35 s',poster:'/landing/route-chrome.jpg',video:'/landing/route-chrome.mp4',alt:'TodoMVC in Chrome: a todo typed and added',background:'mist',size:'md'},
  {id:'skills',name:'toru-skills-readme.mp4',meta:'Mac · 33 s',poster:'/landing/route-mac.jpg',video:'/landing/route-mac.mp4',alt:'An editor on a Mac: the Toru skills README',background:'mist',size:'sm'},
 ];
 

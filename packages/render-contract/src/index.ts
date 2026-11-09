@@ -475,6 +475,22 @@ const thinkingSpeed = 3;
  */
 const cameraLeadMs = 1_023;
 const cameraReleaseMs = 1_016;
+/** How long a demo holds the wide shot after the camera has come back out of the result, before it ends. */
+export const wideEndingMs = 1_200;
+/** The shortest hold on a result before the camera releases it for the ending. */
+const minimumResultHoldMs = 1_500;
+
+/**
+ * When the last result's zoom ends: after its dwell, but early enough that the camera is back out and still for
+ * `wideEndingMs` before the capture ends. With too little capture left, the hold shrinks (to `minimumResultHoldMs`,
+ * then to nothing) rather than the video ending zoomed in.
+ */
+export function finalResultEndMs(startMs: number, durationMs: number): number {
+  const latest = durationMs - cameraReleaseMs - wideEndingMs;
+  const end = Math.min(startMs + resultDwellMs, latest);
+  if (end >= startMs + minimumResultHoldMs) return end;
+  return Math.max(startMs, Math.min(startMs + minimumResultHoldMs, durationMs - cameraReleaseMs));
+}
 
 /** A still picture keeps this long after the change that began it, so the change is seen, and this before the next. */
 const stillBeatAfterMs = 500;
@@ -1025,7 +1041,9 @@ export function proposeZoomRegions(
     const last = [...semanticTimeline].sort((a, b) => a.atMs - b.atMs).at(-1);
     if (last?.type === "result") {
       const region = regions.find(r => r.intent === "result" && r.startMs === last.atMs);
-      if (region) region.endMs = durationMs + 1_000; // Hold the payoff through the last exported frame.
+      // A demo never ends on a zoom: the payoff is held, then the camera comes back out and the last frames are a
+      // still wide shot. A capture stopped too soon after the result gets a shorter hold, never a cropped ending.
+      if (region) region.endMs = finalResultEndMs(region.startMs, durationMs);
     }
   }
   for (let i = 1; i < regions.length; i++) {
@@ -1262,6 +1280,12 @@ export function smoothStalledTravels(
   telemetry: CapturePointerSample[],
   width: number,
   height: number,
+  /**
+   * Spans whose travel must keep the page's own clock: a highlight, where the selection grows on screen with each step
+   * the page took. Redrawn on the planned length, that travel would set off late and trail its own selection, so it
+   * is only filled in between the reported points, at the times the page reported them.
+   */
+  timedSpans: readonly TimeRange[] = [],
 ): CapturePointerSample[] {
   const sorted = [...telemetry].sort((left, right) => left.atMs - right.atMs);
   // The first event after a pause can land a pixel off where the pointer rested (the driver rounds
@@ -1304,6 +1328,20 @@ export function smoothStalledTravels(
     );
     if (distance < 4 || (!stalled && elapsed <= planned * 1.25)) {
       output.push(...run.slice(1));
+      index = end + 1;
+      continue;
+    }
+    if (timedSpans.some(span => span.startMs < arrival.atMs && span.endMs > start.atMs)) {
+      // Straight lines between the reported points, frame by frame, each point at the time the page saw it.
+      for (let position = 1; position < run.length; position++) {
+        const from = run[position - 1]!, to = run[position]!;
+        for (let at = from.atMs + pointerFrameMs; at < to.atMs; at += pointerFrameMs) {
+          const progress = (at - from.atMs) / (to.atMs - from.atMs);
+          output.push({ atMs: Math.round(at), x: from.x + (to.x - from.x) * progress, y: from.y + (to.y - from.y) * progress,
+            kind: "move", ...(from.shape ? { shape: from.shape } : {}) });
+        }
+        output.push(to);
+      }
       index = end + 1;
       continue;
     }
@@ -1354,7 +1392,10 @@ export function buildCursorRecording(
   const telemetry =
     observation.pointerTelemetry.length > 0
       ? observation.directed && smooth
-        ? smoothStalledTravels(observation.pointerTelemetry, observation.width, observation.height)
+        ? smoothStalledTravels(observation.pointerTelemetry, observation.width, observation.height,
+          (observation.semanticTimeline ?? [])
+            .filter(moment => moment.type === "emphasis" && moment.endMs !== undefined && moment.element.startsWith("highlight "))
+            .map(moment => ({ startMs: moment.atMs, endMs: moment.endMs! })))
         : observation.pointerTelemetry
       : [...observation.pointerTrail]
           .sort((left, right) => left.atMs - right.atMs)
@@ -1513,8 +1554,13 @@ export function buildExporterConfig(
   }
   if (cutting) {
     const last = [...(observation.semanticTimeline ?? [])].sort((a, b) => a.atMs - b.atMs).at(-1);
-    if (last?.type === "result" && last.atMs + 4_000 < observation.durationMs) {
-      directedCuts.push({ id: 'final-hold', startMs: last.atMs + 4_000, endMs: observation.durationMs });
+    // The ending is kept up to the wide shot after the result's zoom: hold, release, then `wideEndingMs` of still.
+    const payoff = zoomRegions.filter(region => region.intent === "result").at(-1);
+    const keepUntil = last?.type === "result"
+      ? (payoff ? payoff.endMs + cameraReleaseMs + wideEndingMs : last.atMs + 4_000)
+      : undefined;
+    if (keepUntil !== undefined && keepUntil + 250 < observation.durationMs) {
+      directedCuts.push({ id: 'final-hold', startMs: keepUntil, endMs: observation.durationMs });
     }
   }
   // Cuts never overlap: a still near the end and the final hold would otherwise both claim the same frames.
