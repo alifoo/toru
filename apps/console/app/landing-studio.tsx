@@ -1,137 +1,126 @@
 'use client';
-import {useState,type FormEvent} from 'react';
+import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {CLIENTS,type Client} from './agent-setup';
 import {AgentIcon} from './landing-interactive';
 import {ToruOrb} from './toru-orb';
 
-type Step={label:string;target?:string;expect?:string};
-type Scene={id:string;tab:string;title:string;place:string;tool:string;prompt:string;steps:Step[];current:number;
- poster:string;video:string;length:string;alt:string;cursor:[number,number];camera:[number,number];card?:boolean};
+/** A step of the shot list and the second of the rendered video where it starts. */
+type Step={label:string;target?:string;at:number};
+type Scene={id:string;tab:string;file:string;place:string;prompt:string;steps:Step[];poster:string;video:string;alt:string};
 
-/** The three things the hero window can show. Prompts and recordings are real Toru recordings from the landing set. */
+/**
+ * The three demos on the landing, as recorded: each prompt is what the agent was asked, each shot list what it did,
+ * and each step starts where it shows in the video.
+ */
 const scenes:Scene[]=[
- {id:'linear',tab:'Linear',title:'linear-issue-done',place:'Linear in your Chrome',tool:'recording_run',
+ {id:'linear',tab:'Linear',file:'linear-issue-done.mp4',place:'Linear in your Chrome',
   prompt:'Record a demo of our Linear: open “Invite teammates from the empty state”, mark it Done, then create “Ship the changelog video” and end on the issue list.',
-  steps:[{label:'Open',target:'Invite teammates from the empty state'},{label:'Open',target:'Status'},{label:'Set status to',target:'Done',expect:'the issue moves to Done'},{label:'Create',target:'Ship the changelog video'},{label:'End on the issue list'}],current:2,
-  poster:'/landing/linear.jpg',video:'/landing/linear.mp4',length:'00:42',alt:'Linear in Chrome: an issue marked Done, then a new issue created',cursor:[50,34],camera:[28,18]},
- {id:'chrome',tab:'Notion',title:'notion-roadmap',place:'Notion in your Chrome',tool:'recording_run',
-  prompt:'Present our Toru page in Notion: the delivery promise, the four steps, then the roadmap board, ending on the card “Every video ends on a wide shot”.',
-  steps:[{label:'Underline',target:'the delivery promise'},{label:'Sweep',target:'the four steps'},{label:'Read down to',target:'Roadmap'},{label:'Sweep',target:'Complete',expect:'the shipped cards'},{label:'Open',target:'Every video ends on a wide shot'},{label:'End on its description'}],current:3,
-  poster:'/landing/notion.jpg',video:'/landing/notion.mp4',length:'00:30',alt:'Notion in Chrome: a project page read down to its roadmap, and a shipped card opened',cursor:[46,56],camera:[30,30]},
- {id:'brand',tab:'Your brand',title:'Brand · linear.app',place:'saved once, used on every demo',tool:'brand',
-  prompt:'Colors, background, padding, a logo, intro and outro cards, a GIF and the output size, saved per product domain. Your agent never has to ask.',
-  steps:[{label:'Background',target:'Sky'},{label:'Padding',target:'64 px'},{label:'Logo',target:'corner mark'},{label:'Intro card',target:'title before the flow'},{label:'Outro card',target:'call to action'},{label:'Output',target:'MP4 and GIF'}],current:3,
-  poster:'/landing/linear.jpg',video:'/landing/linear.mp4',length:'00:34',alt:'An intro card in the brand saved for linear.app',cursor:[0,0],camera:[0,0],card:true},
+  steps:[{label:'Open',target:'Invite teammates from the empty state',at:0},{label:'Set status to',target:'Done',at:7},{label:'Back to',target:'Issues',at:16},{label:'Create',target:'Ship the changelog video',at:17.5},{label:'End on the issue list',at:30}],
+  poster:'/landing/linear.jpg',video:'/landing/linear.mp4',alt:'Linear in Chrome: an issue marked Done, then a new issue created'},
+ {id:'notion',tab:'Notion',file:'notion-roadmap.mp4',place:'Notion in your Chrome',
+  prompt:'Present our Toru page in Notion: the delivery promise, the four steps, then the roadmap, ending on the card “Every video ends on a wide shot”.',
+  steps:[{label:'Underline',target:'the delivery promise',at:0},{label:'Sweep',target:'the four steps',at:5},{label:'Read down to',target:'Roadmap',at:7},{label:'Sweep',target:'Complete',at:9.5},{label:'Open',target:'Every video ends on a wide shot',at:14.5},{label:'Point at',target:'Shipped',at:16.5},{label:'Highlight',target:'its description',at:21}],
+  poster:'/landing/notion.jpg',video:'/landing/notion.mp4',alt:'Notion in Chrome: a project page read down to its roadmap, and a shipped card opened'},
+ {id:'wikipedia',tab:'Wikipedia',file:'wikipedia-screencast.mp4',place:'Wikipedia in your Chrome',
+  prompt:'Record a Wikipedia demo: search for “Screencast”, open the article, read down to Uses and highlight what it says about software developers.',
+  steps:[{label:'Search for',target:'Screencast',at:0},{label:'Open',target:'the article',at:7.5},{label:'Underline',target:'the title',at:9.5},{label:'Read down to',target:'Uses',at:12.5},{label:'Highlight',target:'the sentence',at:14.5}],
+  poster:'/landing/wikipedia.jpg',video:'/landing/wikipedia.mp4',alt:'Wikipedia in Chrome: the Screencast article searched, read and a sentence highlighted'},
 ];
-const backgrounds=['sky','slate','mint','peach','mist','ocean'] as const;
-type Background=typeof backgrounds[number];
-const widths=[1280,1920,2560] as const;
+type Background='mist'|'ocean';
 
-/** The hero: Toru's studio, drawn from what a real run shows. Its controls work; the composer starts onboarding. */
+const clock=(seconds:number)=>`00:${String(Math.floor(seconds)).padStart(2,'0')}`;
+
+/**
+ * The hero: Toru's studio playing a real take. The shot list follows the video and a step jumps to it; the settings
+ * are the ones these takes were rendered with. The composer starts onboarding.
+ */
 export function StudioWindow({appUrl}:{appUrl:string}){
- const [sceneId,setSceneId]=useState(scenes[0]!.id),[playing,setPlaying]=useState(false);
- const [background,setBackground]=useState<Background>('mist'),[width,setWidth]=useState<typeof widths[number]>(1920);
- const [zoom,setZoom]=useState(true),[glide,setGlide]=useState(true),[gif,setGif]=useState(true);
+ const [sceneId,setSceneId]=useState(scenes[0]!.id);
+ const [time,setTime]=useState(0),[duration,setDuration]=useState(0),[playing,setPlaying]=useState(false);
+ const video=useRef<HTMLVideoElement>(null);
  const scene=scenes.find(item=>item.id===sceneId)!;
- const pick=(id:string)=>{setSceneId(id);setPlaying(false);};
- const brand=scene.id==='brand';
+ const current=Math.max(0,scene.steps.findLastIndex(step=>step.at<=time));
+ const length=duration||scene.steps.at(-1)!.at+4;
+
+ // Plays while the studio is on screen, unless the viewer asked for less motion; pauses when it scrolls away.
+ useEffect(()=>{
+  const element=video.current;
+  if(!element)return;
+  // The metadata can arrive before the page hydrates, and its event with it.
+  if(Number.isFinite(element.duration))setDuration(element.duration);
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  const observer=new IntersectionObserver(([entry])=>{ if(entry?.isIntersecting)void element.play().catch(()=>undefined); else element.pause(); },{threshold:.2});
+  observer.observe(element);
+  return ()=>observer.disconnect();
+ },[sceneId]);
+
+ const pick=(id:string)=>{setSceneId(id);setTime(0);setDuration(0);};
+ const seek=(at:number)=>{ const element=video.current; if(!element)return; element.currentTime=at; setTime(at); void element.play().catch(()=>undefined); };
+ const toggle=()=>{ const element=video.current; if(!element)return; if(element.paused)void element.play().catch(()=>undefined); else element.pause(); };
+
  return <div className="st-stage">
   <section className="st-window" aria-label="Toru studio">
    <div className="st-titlebar">
     <span className="st-lights" aria-hidden="true"><i/><i/><i/></span>
     <span className="st-app"><ToruOrb size={15} still/>toru</span>
-    <span className="st-file"><b>{scene.title}</b> — {scene.place}</span>
-    {brand?<span className="st-status st-status-brand">Every demo of this product</span>:<span className="st-status"><i className="st-blink"/>Recording · step {scene.current+1} of {scene.steps.length}</span>}
-    <span className="st-titlebar-end"><span>Brand · {brand?'linear.app':'Toru Team'}</span><span className="st-mono">{scene.tool}</span></span>
+    <span className="st-file"><b>{scene.file}</b> — {scene.place}</span>
+    <span className="st-status"><i className={playing?'st-blink':''}/>Step {current+1} of {scene.steps.length}</span>
+    <span className="st-titlebar-end"><span className="st-mono">recording_run</span></span>
    </div>
    <div className="st-body">
     <aside className="st-panel st-left">
-     <div className="st-agent"><AgentIcon client="claude-code" size={15}/><b>Claude Code</b><span className="st-mono">{brand?'saved brand':scene.tool}</span></div>
+     <div className="st-agent"><AgentIcon client="claude-code" size={15}/><b>Claude Code</b><span className="st-mono">recording_run</span></div>
      <p className="st-prompt">{scene.prompt}</p>
-     <p className="st-label"><span>{brand?'Brand':'Shot list'}</span><span>{scene.steps.length} {brand?'settings':'steps'}</span></p>
-     <ol className="st-shots">{scene.steps.map((raw,index)=>{
-      const step=brand&&raw.label==='Background'?{...raw,target:background[0]!.toUpperCase()+background.slice(1)}:raw;
-      const state=index<scene.current?'done':index===scene.current?'now':'next';
-      return <li key={step.label+index} className={`st-shot st-${state}`}><span className="st-tick" aria-hidden="true">{state==='done'?'✓':state==='now'?<i className="st-blink"/>:null}</span>
-       <span className="st-shot-text">{step.label}{step.target&&<> <b>{step.target}</b></>}{state==='now'&&step.expect&&<small className="st-mono">expect · {step.expect}</small>}</span></li>;})}
+     <p className="st-label"><span>Shot list</span><span>{scene.steps.length} steps</span></p>
+     <ol className="st-shots">{scene.steps.map((step,index)=>{
+      const state=index<current?'done':index===current?'now':'next';
+      return <li key={scene.id+index} className={`st-shot st-${state}`}>
+       <button type="button" onClick={()=>seek(step.at)} aria-current={state==='now'?'step':undefined}>
+        <span className="st-tick" aria-hidden="true">{state==='done'?'✓':state==='now'?<i/>:null}</span>
+        <span className="st-shot-text">{step.label}{step.target&&<> <b>{step.target}</b></>}</span>
+        <span className="st-shot-at st-mono">{clock(step.at)}</span>
+       </button>
+      </li>;})}
      </ol>
      <Composer appUrl={appUrl}/>
     </aside>
 
     <div className="st-canvas">
-     <div className="st-tools" aria-hidden="true">
-      <span className="st-tool st-tool-on"><svg viewBox="0 0 24 24"><path d="M5 3l6 16 2.5-6.5L20 10z"/></svg></span>
-      <span className="st-tool"><svg viewBox="0 0 24 24"><path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3"/><circle cx="12" cy="12" r="3"/></svg></span>
-      <span className="st-tool"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5M11 8v6M8 11h6"/></svg></span>
-      <span className="st-tool"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 10h8M10 14h4"/></svg></span>
-      <span className="st-tool"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8 7.5L20 18M8 16.5L20 6"/></svg></span>
-     </div>
      <div className="st-output">
-      <p className="st-output-label"><span>Output · {width} × {width*9/16}</span><span>{gif?'MP4 + GIF':'MP4'}</span></p>
-      <div className={`st-frame st-bg-${background}`}>
-       <div className="st-shot-wrap">
-        {brand
-         ?<div className="st-card"><span>Toru Team · Linear</span><b>Record the launch video</b></div>
-         :playing
-          ?<video key={scene.video} src={scene.video} poster={scene.poster} autoPlay muted playsInline controls aria-label={scene.alt}/>
-          :<>
-            <img src={scene.poster} alt={scene.alt} width={1280} height={720}/>
-            {zoom&&<span key={`cam-${scene.id}`} className="st-camera" style={{left:`${scene.camera[0]}%`,top:`${scene.camera[1]}%`}} aria-hidden="true"><i/><i/><i/><i/><em>Camera · 2.0×</em></span>}
-            <span key={`cur-${scene.id}`} className={`st-cursor${glide?'':' st-cursor-still'}`} style={{left:`${scene.cursor[0]}%`,top:`${scene.cursor[1]}%`}} aria-hidden="true">
-             <i className="st-ripple"/>
-             <svg viewBox="0 0 24 24"><path d="M4 2.5l.1 17.2 4.6-4.4 3.1 6.9 3-1.3-3.1-6.8 6.4-.3z"/></svg>
-             <em>Navigator · Claude Code</em>
-            </span>
-           </>}
-       </div>
-      </div>
+      <video key={scene.id} ref={video} className="st-video" src={scene.video} poster={scene.poster} muted loop playsInline preload="metadata" aria-label={scene.alt}
+       onTimeUpdate={event=>setTime(event.currentTarget.currentTime)} onDurationChange={event=>setDuration(event.currentTarget.duration)}
+       onPlay={()=>setPlaying(true)} onPause={()=>setPlaying(false)}/>
       <div className="st-panel st-timeline">
        <div className="st-timeline-top">
-        <button type="button" className="st-play" onClick={()=>setPlaying(!playing)} disabled={brand} aria-label={playing?'Back to the recording view':`Play the rendered ${scene.length.replace('00:','')} s demo`}>
+        <button type="button" className="st-play" onClick={toggle} aria-label={playing?'Pause':'Play'}>
          {playing?<svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>:<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>}
         </button>
-        {brand?<span className="st-mono">Intro card <b>before the flow</b></span>:<span className="st-mono">{playing?'Rendered':'REC'} <b>{playing?scene.length:'00:11'}</b> / {scene.length}</span>}
-        <span className="st-timeline-note">{brand?'Applied to every demo of linear.app':playing?'Delivery check passed':'Pauses cut · a zoom on every click'}</span>
+        <span className="st-mono"><b>{clock(time)}</b> / {clock(length)}</span>
+        <span className="st-timeline-note">Rendered by Toru · delivery check passed</span>
        </div>
-       <div className="st-track" aria-hidden="true">{scene.steps.map((step,index)=><span key={index} className={index<scene.current?'st-clip-done':index===scene.current?'st-clip-now':''}/>)}<i className={brand?'':'st-playhead'} style={{left:`${(scene.current+.4)/scene.steps.length*100}%`}}/></div>
+       <div className="st-track">
+        {scene.steps.map((step,index)=>{
+         const end=scene.steps[index+1]?.at??length;
+         return <button key={scene.id+index} type="button" style={{flexGrow:Math.max(.5,end-step.at)}} className={index<current?'st-clip-done':index===current?'st-clip-now':''} onClick={()=>seek(step.at)} aria-label={`Jump to: ${step.label}${step.target?` ${step.target}`:''}`}/>;
+        })}
+        <i className="st-playhead" style={{left:`${Math.min(100,time/length*100)}%`}} aria-hidden="true"/>
+       </div>
       </div>
      </div>
     </div>
 
-    <aside className="st-panel st-inspector" aria-label="Output settings">
-     <div className="st-insp-head"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/></svg><b>Output frame</b><span>{brand||scene.id==='linear'?'linear.app':'notion.so'}</span></div>
-     <div className="st-insp">
-      <p>Background</p>
-      <div className="st-swatches" role="group" aria-label="Background">{backgrounds.map(value=><button key={value} type="button" className={`st-bg-${value}`} aria-pressed={background===value} aria-label={value} onClick={()=>setBackground(value)}/>)}</div>
-      <div className="st-fields st-mono"><span><em>Pad</em>64</span><span><em>Radius</em>14</span></div>
-     </div>
-     <div className="st-insp">
-      <p>Camera</p>
-      <Toggle label="Zoom on every click" on={zoom} set={setZoom}/>
-     </div>
-     <div className="st-insp">
-      <p>Cursor</p>
-      <Toggle label="Smooth the pointer's travel" on={glide} set={setGlide}/>
-      <span className="st-insp-note">Rests on each target before it presses.</span>
-     </div>
-     <div className="st-insp">
-      <p>Output</p>
-      <div className="st-seg st-mono" role="group" aria-label="Width">{widths.map(value=><button key={value} type="button" aria-pressed={width===value} onClick={()=>setWidth(value)}>{value}</button>)}</div>
-      <div className="st-checks"><span className="st-check st-check-on">MP4</span><button type="button" className={`st-check${gif?' st-check-on':''}`} aria-pressed={gif} onClick={()=>setGif(!gif)}>GIF</button></div>
-     </div>
-     <div className="st-insp">
-      <p>Delivery check</p>
-      <span className="st-insp-note">A blank, frozen or too-short take is held back and not charged.</span>
-     </div>
+    <aside className="st-panel st-inspector" aria-label="How this take was made">
+     <div className="st-insp-head"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/></svg><b>This take</b><span>Toru for Chrome</span></div>
+     <div className="st-insp"><p>Background</p><span className="st-insp-value"><i className="st-swatch st-bg-mist" aria-hidden="true"/>Mist, a thin frame</span></div>
+     <div className="st-insp"><p>Camera</p><span className="st-insp-note">Zooms to 2× on each click, highlight and list it runs down, and ends on a still wide shot.</span></div>
+     <div className="st-insp"><p>Cursor</p><span className="st-insp-note">A hand-like cursor that rests on each target before it presses.</span></div>
+     <div className="st-insp"><p>Output</p><span className="st-insp-value st-mono">2560 × 1440 · MP4 + GIF</span><span className="st-insp-note">Pauses cut. Scrolls stay smooth.</span></div>
+     <div className="st-insp"><p>Delivery check</p><span className="st-insp-note">Passed. A blank, frozen or badly framed take is held back and not charged.</span></div>
     </aside>
    </div>
   </section>
-  <div className="st-tabs" role="tablist" aria-label="What Toru records">{scenes.map(item=><button key={item.id} type="button" role="tab" aria-selected={item.id===sceneId} onClick={()=>pick(item.id)}>{item.tab}</button>)}</div>
+  <div className="st-tabs" role="tablist" aria-label="Demos recorded with Toru">{scenes.map(item=><button key={item.id} type="button" role="tab" aria-selected={item.id===sceneId} onClick={()=>pick(item.id)}>{item.tab}</button>)}</div>
  </div>;
-}
-
-function Toggle({label,on,set}:{label:string;on:boolean;set:(value:boolean)=>void}){
- return <label className="st-toggle"><span>{label}</span><input type="checkbox" checked={on} onChange={event=>set(event.target.checked)}/><i aria-hidden="true"/></label>;
 }
 
 /** The studio's composer: the same ask as before. Its text and the chosen agent ride into onboarding. */
