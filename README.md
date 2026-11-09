@@ -1,6 +1,6 @@
 # Toru
 
-**Recording infrastructure for your agent.** Your coding agent records your product demos itself: launch clips,
+**Let your agent record anything.** Your coding agent records any flow in your own Chrome or on your Mac: launch clips,
 changelog GIFs, help-center guides and bug repros. Toru is its camera, editor and brand kit, and checks every take.
 
 - Hosted: [toru.tools](https://toru.tools) (free tier, no card) · Docs: [toru.tools/docs](https://toru.tools/docs) ·

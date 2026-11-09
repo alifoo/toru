@@ -3,7 +3,7 @@ import {PublicPage} from '../public-landing';
 import {sourceUrl} from '../pricing/plans';
 export const metadata:Metadata={title:'Docs · Toru',description:'Connect Toru to Claude Code, Claude, Cursor or Codex, pair your Chrome or Mac, and ask for a demo. Brand, delivery check and credits explained.',alternates:{canonical:'https://toru.tools/docs'}};
 export default function Docs(){return <PublicPage><p className="eyebrow">Guide</p><h1>Give your agent<br/>a camera.</h1>
- <p>Toru is recording infrastructure for your AI agent. Connect it once, pair the Chrome or Mac it records in, and ask for a demo in your own words. This page is the whole of it.</p>
+ <p>Toru lets your AI agent record anything in your own Chrome or on your Mac. Connect it once, pair the Chrome or Mac it records in, and ask for a demo in your own words. This page is the whole of it.</p>
  <h2 id="connect">1. Connect your agent</h2>
  <p>In Claude Code, Claude, Cursor, Codex or any client that supports remote MCP servers, add a connector with the address <code>https://mcp.toru.tools/mcp</code>, then sign in to Toru and approve the connection. In Claude Code you can also install the Toru skill from <code>alifoo/toru-skills</code>. This connects your agent to Toru; it does not sign in to your product.</p>
  <h2 id="where">2. Choose where Toru records</h2>

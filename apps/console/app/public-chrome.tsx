@@ -14,7 +14,7 @@ export function PublicPage({children}:{children:ReactNode}){return <div classNam
 
 export function PublicFooter(){
  return <footer className="lw-footer">
-  <div className="lw-footer-brand"><span className="st-brand"><ToruOrb size={20} still/>toru</span><p>Your agent records your product demos.</p><small>Limited public beta</small></div>
+  <div className="lw-footer-brand"><span className="st-brand"><ToruOrb size={20} still/>toru</span><p>Let your agent record anything.</p><small>Limited public beta</small></div>
   <nav aria-label="Product"><h2>Product</h2><a href="/chrome">Toru for Chrome</a><a href="/mac">Toru for Mac</a><a href="/docs">Docs</a></nav>
   <nav aria-label="Toru"><h2>Toru</h2><a href="/#why">Why Toru</a><a href="/#how-it-works">Set up</a><a href="/pricing">Pricing</a><a href="/#faq">FAQ</a></nav>
   <nav aria-label="Company"><h2>Company</h2><a href={APP_URL}>Open app</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="mailto:support@toru.tools">Get in touch</a></nav>

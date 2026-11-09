@@ -1,5 +1,5 @@
-# Recording infrastructure for your agent. (https://toru.tools/)
-Your coding agent records your product demos itself: launch clips, changelog GIFs, help-center guides and bug repros. Toru is its camera, editor and brand kit, and checks every take. 10 free demos a month · No card required · Open source, MIT. Works inside the agent you already use: Claude Code, Claude, Cursor, Codex and any MCP client.
+# Let your agent record anything. (https://toru.tools/)
+Ask Claude Code, Cursor, Codex or Claude for a video of any flow (a launch demo, a bug repro, a changelog GIF, a how-to) and it records it in your own Chrome or on your Mac, in your brand, with every take checked. 10 free demos a month · No card required · Open source, MIT. Works inside the agent you already use: Claude Code, Claude, Cursor, Codex and any MCP client.
 - **What your agent can record for you.**
   - **Launch videos:** A polished walkthrough for Product Hunt, your landing page or the announcement post. “Record the new onboarding flow for our launch.”
   - **Changelog clips:** A short clip or GIF for every feature you merge, in the release notes the same day. “Make a GIF of the CSV export for the changelog.”
@@ -22,7 +22,7 @@ Your coding agent records your product demos itself: launch clips, changelog GIF
   - **What uses a credit?** One delivered video that passed the check. A blank, frozen or too-short take is held back and costs nothing; downloads and technical retries do not use another credit.
   - **Can it record a Mac app?** Yes. Toru for Mac records the window you share and, when you allow it, operates that window for your agent. Same account, same credits.
 # Give your agent a camera. (https://toru.tools/docs)
-Toru is recording infrastructure for your AI agent. Connect it once, pair the Chrome or Mac it records in, and ask for a demo in your own words. This page is the whole of it.
+Toru lets your AI agent record anything in your own Chrome or on your Mac. Connect it once, pair the Chrome or Mac it records in, and ask for a demo in your own words. This page is the whole of it.
 - **1. Connect your agent.** In Claude Code, Claude, Cursor, Codex or any client that supports remote MCP servers, add a connector with the address `https://mcp.toru.tools/mcp`, then sign in to Toru and approve the connection. In Claude Code you can also install the Toru skill from `alifoo/toru-skills`. This connects your agent to Toru; it does not sign in to your product.
 - **2. Choose where Toru records.** Toru records in two places, both already signed in as you. It never asks for a password or a code, and a sign-in page stops the run instead of being recorded.
   - **Web apps: your own Chrome.** Install [Toru for Chrome](https://toru.tools/chrome) and pair it once from a link your agent gives you. Each recording opens your product in a window of its own, signed in with your session, with no click from you. Your cookies and storage never leave Chrome.
