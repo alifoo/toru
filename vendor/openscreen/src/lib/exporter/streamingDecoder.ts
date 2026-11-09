@@ -516,14 +516,9 @@ export class StreamingVideoDecoder {
 
 				segmentIdx++;
 				segmentFrameIndex = 0;
-				if (
-					heldFrame &&
-					segmentIdx < segments.length &&
-					heldFrameSec < segments[segmentIdx].startSec - EPSILON_SEC
-				) {
-					heldFrame.close();
-					heldFrame = null;
-				}
+				// The held frame stays: a capture keeps one frame per change (Toru for Chrome), so the picture at the
+				// next segment's start is the last frame before it, however long ago it came. Dropping it here lost
+				// every kept stretch with no new frame inside it, such as the still wide shot that ends a demo.
 			}
 
 			if (segmentIdx >= segments.length) {
@@ -533,9 +528,11 @@ export class StreamingVideoDecoder {
 
 			const currentSegment = segments[segmentIdx];
 
-			// Before current segment (trimmed region or pre-roll).
+			// Before current segment (trimmed region or pre-roll): it becomes the picture the segment opens on.
 			if (frameTimeSec < currentSegment.startSec - EPSILON_SEC) {
-				frame.close();
+				heldFrame?.close();
+				heldFrame = frame;
+				heldFrameSec = frameTimeSec;
 				continue;
 			}
 
@@ -545,8 +542,9 @@ export class StreamingVideoDecoder {
 				continue;
 			}
 
-			// Any target timestamp before this midpoint is closer to heldFrame than current frame.
-			const handoffBoundarySec = (heldFrameSec + frameTimeSec) / 2;
+			// The held frame shows until the next one's own time. A midpoint handoff is fine at a constant frame rate,
+			// but in a capture that keeps one frame per change it showed a change half a pause early.
+			const handoffBoundarySec = frameTimeSec - EPSILON_SEC;
 			while (!this.cancelled) {
 				const segmentFrameCount = segmentOutputFrameCounts[segmentIdx];
 				if (segmentFrameIndex >= segmentFrameCount) {
@@ -575,24 +573,15 @@ export class StreamingVideoDecoder {
 
 		// Flush remaining output frames for the last decoded frame.
 		if (heldFrame && segmentIdx < segments.length) {
+			// The last picture holds through every segment left: the source has no newer frame for them.
 			while (!this.cancelled && segmentIdx < segments.length) {
 				const segment = segments[segmentIdx];
-				if (heldFrameSec < segment.startSec - EPSILON_SEC) {
-					break;
-				}
-
 				while (!this.cancelled && (await emitHeldFrameForTarget(segment))) {
 					// Keep emitting output frames for the active segment.
 				}
 
 				segmentIdx++;
 				segmentFrameIndex = 0;
-				if (
-					segmentIdx < segments.length &&
-					heldFrameSec < segments[segmentIdx].startSec - EPSILON_SEC
-				) {
-					break;
-				}
 			}
 			heldFrame.close();
 			heldFrame = null;
