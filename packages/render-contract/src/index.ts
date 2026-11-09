@@ -966,7 +966,9 @@ export function finalResultMoment(timeline: readonly CaptureSemanticAction[]): C
 /** The last zoom of the ending: the payoff's, or a gesture after it the payoff does not frame. */
 function endingRegion<T extends { startMs: number; endMs: number }>(regions: readonly T[], final: CaptureSemanticAction | undefined): T | undefined {
   if (!final) return undefined;
-  return regions.filter(region => region.startMs >= final.atMs).sort((a, b) => a.endMs - b.endMs).at(-1);
+  // Any zoom still on screen once the result is marked: the payoff's own may start earlier, set off as the shot before
+  // it ended.
+  return regions.filter(region => region.endMs > final.atMs).sort((a, b) => a.endMs - b.endMs).at(-1);
 }
 
 /**
@@ -1008,9 +1010,13 @@ export function proposeZoomRegions(
     const startMs = Math.max(0, Math.min(first.atMs - clickSettleMs, anchored));
     const intent = semanticActionFor(shot, semanticTimeline);
     if (intent?.type === "setup" || (directed && first.shape === "text")) continue;
+    // A click that brings up the result (a dialog's "Create" closing on the list) is not dwelt on: the place it was
+    // pressed is empty a moment later, and the camera sets off for the result instead of holding on nothing.
+    const leadsToResult = semanticTimeline.some(moment => moment.type === "result" && moment.atMs >= last.atMs
+      && moment.atMs - last.atMs <= 4_000);
     const endMs = Math.min(
       durationMs,
-      last.atMs + (intent?.type === "result" ? resultDwellMs : dwellMs),
+      last.atMs + (intent?.type === "result" ? resultDwellMs : leadsToResult ? 600 : dwellMs),
     );
     if (endMs <= startMs) continue;
 
@@ -1106,7 +1112,8 @@ export function proposeZoomRegions(
   // A zoom cut down to a moment (a click that navigates at once) only twitches the camera in and straight back out.
   const shortest = directed ? minimumShotMs : 0;
   const lasting = regions.filter(region => region.endMs - region.startMs > shortest || region.intent === "result");
-  return directed ? keepCameraStillOnClicks(paceZooms(lasting, removable), ordered, durationMs, removable) : lasting;
+  const pageChanges = semanticTimeline.filter(moment => moment.type === "navigate").map(moment => moment.atMs);
+  return directed ? keepCameraStillOnClicks(paceZooms(lasting, removable, pageChanges), ordered, durationMs, removable) : lasting;
 }
 
 /**
@@ -1195,7 +1202,7 @@ export function movesFlowOn(pointer: CapturePointer, timeline: readonly CaptureS
 const zoomsPerMinute = 4;
 const openBetweenZoomsMs = 2_000;
 
-function paceZooms(regions: readonly ProposedZoomRegion[], removable: readonly TimeRange[] = []): ProposedZoomRegion[] {
+function paceZooms(regions: readonly ProposedZoomRegion[], removable: readonly TimeRange[] = [], navigations: readonly number[] = []): ProposedZoomRegion[] {
   const kept: ProposedZoomRegion[] = [];
   const essential = (region: ProposedZoomRegion) =>
     region.intent === "result" || region.intent === "type" || region.intent === "emphasis";
@@ -1205,17 +1212,21 @@ function paceZooms(regions: readonly ProposedZoomRegion[], removable: readonly T
     // The gap the viewer sees: a pause cut out between two zooms brings them together on screen.
     const gap = previous ? region.startMs - previous.endMs - cutBetween(removable, previous.endMs, region.startMs) : Infinity;
     if (previous && region.startMs > previous.endMs && gap < openBetweenZoomsMs) {
-      // Close by, the camera holds through the gap instead of coming out and back. Elsewhere, one of the two goes.
-      const reach = 0.5 / Math.min(previous.customScale, region.customScale);
-      if (Math.hypot(region.focus.cx - previous.focus.cx, region.focus.cy - previous.focus.cy) <= reach) {
-        previous.endMs = region.startMs;
-      } else if (!essential(region)) {
-        continue;
-      } else if (!essential(previous)) {
-        kept.pop();
-      }
+      // The camera holds in through the gap and travels to the next shot instead of coming out and back in. It used to
+      // drop one of the two when they were far apart, and once pauses are cut nearly every click sits that close to
+      // the typing, gesture or result after it: the Linear demo of 09/11/2026 lost every click zoom (the status menu,
+      // "New issue", "Create issue") and played wide. Across a page change the camera comes out instead: a zoom held
+      // while the page changes under it reads as a jump, so one of the two goes as before.
+      // It sets off for the next shot as soon as the last one is done, rather than lingering on a place the flow has
+      // left (the spot where a dialog's "Create" button was, for three seconds before the result).
+      const pageChanges = navigations.some(at => at > previous.endMs - 1_000 && at < region.startMs);
+      if (!pageChanges) region.startMs = previous.endMs;
+      else if (!essential(region)) continue;
+      else if (!essential(previous)) kept.pop();
     }
-    const recent = kept.filter(other => other.startMs > region.startMs - 60_000).length;
+    // The rate the delivery check holds to (reviewCamera, zoom_pumping): clicks only; typing, gestures and the result
+    // are what the zooms are for and never count against it.
+    const recent = kept.filter(other => !essential(other) && other.startMs > region.startMs - 60_000).length;
     if (recent >= zoomsPerMinute && !essential(region)) continue;
     kept.push(region);
   }
