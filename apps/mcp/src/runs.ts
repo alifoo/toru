@@ -83,9 +83,10 @@ export class RunController {
    *
    * The camera holds on the result, but only for as long as there is video: stopping the moment the navigator
    * reached the final state ended a fast run (a Mac app the navigator reads instantly) a beat after its last
-   * click, before anyone could read what it had done.
+   * click, before anyone could read what it had done. Long enough for the render's whole ending: the result's zoom
+   * (3.2 s), the camera coming back out (1 s) and a still wide shot (1.2 s), so a video never ends zoomed in.
    */
-  resultHoldMs = 2_500;
+  resultHoldMs = 5_000;
   /** Who drives a run that does not say: the agent when this server has no Toru navigator (self-host without TYPESAFE_API_KEY). */
   defaultNavigator: 'toru' | 'agent' = 'toru';
   /** An agent that chose to drive and then makes no call on the session for this long has left; the run stops. */

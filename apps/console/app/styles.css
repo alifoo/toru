@@ -1047,8 +1047,8 @@ body { background:radial-gradient(ellipse at 12% 0%,#e1edf3aa,transparent 45%),r
 }
 body { background:
   radial-gradient(48% 38% at 10% 4%,#d7e7f2 0%,transparent 70%),
-  radial-gradient(40% 34% at 92% 16%,#e5e0f3 0%,transparent 70%),
-  radial-gradient(46% 40% at 78% 62%,#d9ece4 0%,transparent 72%),
+  radial-gradient(40% 34% at 92% 16%,#d6e2ee 0%,transparent 70%),
+  radial-gradient(46% 40% at 78% 62%,#e1e8ee 0%,transparent 72%),
   radial-gradient(40% 36% at 14% 78%,#e2ebf6 0%,transparent 70%),
   #f3f7f9; background-attachment:fixed; }
 
@@ -1084,7 +1084,7 @@ body { background:
 
 /* Route cards: glass with only a breath of their colour. */
 .lx-tint-chrome { background:radial-gradient(90% 70% at 10% 0%,#d9ecd9a6,transparent 70%),var(--lg-fill); }
-.lx-tint-mac { background:radial-gradient(90% 70% at 10% 0%,#e3ddf3a6,transparent 70%),var(--lg-fill); }
+.lx-tint-mac { background:radial-gradient(90% 70% at 10% 0%,#d3e1efa6,transparent 70%),var(--lg-fill); }
 .lx-tint-web,.lx-tint-browser { background:radial-gradient(90% 70% at 10% 0%,#d4e5f2a6,transparent 70%),var(--lg-fill); }
 
 /* The "details" section was a large dark slab; it is pale glass now, its demos glass cards inside it. */
@@ -1123,7 +1123,7 @@ body { background:
 :root { --mono:var(--font-plex-mono),ui-monospace,SFMono-Regular,Menlo,monospace; --st-ground:#e7ecef; --st-window:#f3f6f8; --st-line:#e1e7eb; --st-hair:#edf1f3; --st-faint:#8996a0; --st-grey:#7b8892; --st-body:#4b5b66; --st-blue:#3d6fd8; --st-mint:#9fd9c4; }
 .lw-site main { display:block; }
 .lw-container { width:min(1180px,calc(100% - 48px)); margin:0 auto; }
-.lw-site,.st-site { min-height:100vh; background:radial-gradient(40% 26% at 12% 0%,#dce8f1 0%,transparent 70%),radial-gradient(36% 24% at 90% 4%,#e6e1f2 0%,transparent 70%),var(--st-ground); }
+.lw-site,.st-site { min-height:100vh; background:radial-gradient(46% 30% at 12% 0%,#cfe0f3 0%,transparent 70%),radial-gradient(40% 28% at 90% 4%,#d3e1ef 0%,transparent 70%),linear-gradient(180deg,#eef4fb 0%,#e6ecf1 38%,#e3e9ee 100%); }
 .st-mono { font-family:var(--mono); }
 .tl-agent-icon { display:inline-block; flex:none; vertical-align:-3px; }
 .tl-glass { position:relative; }
@@ -1238,8 +1238,8 @@ body { background:
 .st-frame { position:relative; aspect-ratio:16/9; box-sizing:border-box; padding:3.94% 7%; border-radius:6px; box-shadow:0 0 0 1px #ffffff99,0 30px 60px -30px #2c465488; transition:background .3s; }
 .st-shot-wrap { position:relative; width:100%; height:100%; }
 .st-shot-wrap > img,.st-shot-wrap > video { display:block; width:100%; height:100%; object-fit:cover; border-radius:9px; background:#fff; box-shadow:0 16px 36px -16px #1e2d4f80,0 0 0 1px #ffffff80; }
-.st-bg-sky { background:linear-gradient(140deg,#a9c8f2 0%,#c7b9f0 55%,#f3c5d6 100%); }
-.st-bg-aurora { background:linear-gradient(135deg,#8c7bea 0%,#c98bd8 50%,#f2a88e 100%); }
+.st-bg-sky { background:linear-gradient(140deg,#eef4fb 0%,#c9dcf2 55%,#a9c3df 100%); }
+.st-bg-slate { background:linear-gradient(140deg,#e9eef3 0%,#b8c6d2 100%); }
 .st-bg-mint { background:linear-gradient(140deg,#bfe6d6 0%,#e3f1cf 100%); }
 .st-bg-peach { background:linear-gradient(140deg,#f6cdb8 0%,#f5e4c4 100%); }
 .st-bg-mist { background:linear-gradient(140deg,#f6f8fa 0%,#dce3eb 100%); }
@@ -1448,7 +1448,7 @@ body { background:
 
 /* ===== Console in the Studio language (2026-10): a cool grey ground, white panels with a hairline, small type, mono for
    numbers and tool names. Record red marks only what is live; blue marks what is selected. Overrides the glass above. ===== */
-.studio { --line:var(--st-line); gap:16px; padding:12px 24px 40px 12px; background:radial-gradient(40% 26% at 12% 0%,#dce8f1 0%,transparent 70%),radial-gradient(36% 24% at 90% 4%,#e6e1f2 0%,transparent 70%),var(--st-ground); grid-template-columns:224px minmax(0,1fr); }
+.studio { --line:var(--st-line); gap:16px; padding:12px 24px 40px 12px; background:radial-gradient(46% 30% at 12% 0%,#cfe0f3 0%,transparent 70%),radial-gradient(40% 28% at 90% 4%,#d3e1ef 0%,transparent 70%),linear-gradient(180deg,#eef4fb 0%,#e6ecf1 38%,#e3e9ee 100%); grid-template-columns:224px minmax(0,1fr); }
 .studio-rail { top:12px; height:calc(100svh - 24px); gap:22px; padding:14px 10px 12px; border:0; border-radius:13px; background:#fff; -webkit-backdrop-filter:none; backdrop-filter:none; box-shadow:0 0 0 1px var(--st-line),0 1px 2px #2c46540d; }
 .studio-mark { padding:2px 8px; font-size:19px; }
 .studio-rail nav a { gap:10px; padding:8px 10px; border-radius:8px; font-size:13px; color:#64727d; }
@@ -1519,7 +1519,7 @@ body { background:
 .st-toggle-off { opacity:.5; cursor:default; }
 
 /* Onboarding in the Studio language: the grey ground, a quiet two-tone voice, light mono code, blue for the choice. */
-.ob { background:radial-gradient(40% 26% at 12% 0%,#dce8f1 0%,transparent 70%),radial-gradient(36% 24% at 90% 4%,#e6e1f2 0%,transparent 70%),var(--st-ground); }
+.ob { background:radial-gradient(46% 30% at 12% 0%,#cfe0f3 0%,transparent 70%),radial-gradient(40% 28% at 90% 4%,#d3e1ef 0%,transparent 70%),linear-gradient(180deg,#eef4fb 0%,#e6ecf1 38%,#e3e9ee 100%); }
 .ob-column { margin-top:48px; }
 .ob-count { font-family:var(--mono); font-size:11.5px; color:var(--st-faint); }
 .ob h1 { font-size:clamp(28px,3.4vw,36px); font-weight:400; letter-spacing:-.035em; line-height:1.15; }
@@ -1779,4 +1779,4 @@ body { background:
 .lw-site .app-signin,.st-site .app-signin { margin:96px auto 0; }
 .app-signin h1 { font-size:clamp(28px,3.4vw,36px); font-weight:400; letter-spacing:-.035em; }
 .app-signin .primary { min-height:44px; padding:0 22px; justify-content:center; }
-.auth-page { background:radial-gradient(40% 26% at 12% 0%,#dce8f1 0%,transparent 70%),radial-gradient(36% 24% at 90% 4%,#e6e1f2 0%,transparent 70%),var(--st-ground); }
+.auth-page { background:radial-gradient(46% 30% at 12% 0%,#cfe0f3 0%,transparent 70%),radial-gradient(40% 28% at 90% 4%,#d3e1ef 0%,transparent 70%),linear-gradient(180deg,#eef4fb 0%,#e6ecf1 38%,#e3e9ee 100%); }

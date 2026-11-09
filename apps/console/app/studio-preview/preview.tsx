@@ -30,7 +30,7 @@ const linearStudio = { outputDurationMs: 34_766, introMs: 0, outroMs: 0,
     { startMs: 11_800, endMs: 15_900, scale: 1.4, element: "button New issue" }, { startMs: 17_200, endMs: 24_600, scale: 1.6, element: "textbox Title" }, { startMs: 26_400, endMs: 31_800, scale: 1.3, element: "Issues" }],
   cuts: [{ atMs: 9_800, removedMs: 2_400 }, { atMs: 21_000, removedMs: 3_100 }],
   cursor: { scale: 2.4, smooth: true },
-  settings: { background: "toru-sky", padding: 30, radius: 12, width: 1920, height: 1080, gif: true, logo: false, cards: false, zoom: { enabled: true }, compressPauses: true } };
+  settings: { background: "toru-mist", padding: 30, radius: 12, width: 1920, height: 1080, gif: true, logo: false, cards: false, zoom: { enabled: true }, compressPauses: true } };
 
 const runs: DemoRun[] = [
   { runId: id(1), status: "rendering", active: true, title: "Create a project named Launch and invite a teammate", url: "https://app.acme.com", route: "local-browser", startedAt: ago(1), stages: { planning: ago(1), navigating: ago(1), recording: ago(0.5), rendering: ago(0.2) }, session: { status: "rendering", progress: { percent: 62 } } },

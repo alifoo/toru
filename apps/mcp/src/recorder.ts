@@ -1359,13 +1359,11 @@ export class Recorder {
       if (!['captured', 'completed', 'interrupted'].includes(job.status)) throw new Error('capture_required');
       if (!await this.hasCapture(job.id)) throw new Error('capture_unavailable');
       const observation = JSON.parse(await readFile(this.path(job.id, 'observation.json'), 'utf8')) as CaptureObservation;
-      // A Mac window recorded with room around it is shown on a light backdrop with a thin frame, unless the brand
-      // or the request says otherwise; everything else stays full-bleed.
-      const layered = (observation.layers?.samples.length ?? 0) > 0;
-      const padding = presentation.padding ?? (layered ? 8 : 0);
-      // The default behind a Mac window is the light, grainy blue of toru.tools.
+      // Every demo is shown on a light backdrop with a thin frame, unless the brand or the request says otherwise.
+      const padding = presentation.padding ?? 8;
+      // Without a brand, every demo sits on Toru's own white-to-grey Mist, as on toru.tools.
       const wallpaper = presentation.background ? backgrounds[presentation.background as keyof typeof backgrounds] ?? presentation.background
-        : brandWallpaper(brand) ?? (layered ? 'toru-sky' : backgrounds.midnight);
+        : brandWallpaper(brand) ?? 'toru-mist';
       const outputWidth = presentation.width && observation.width > 0 ? Math.min(presentation.width, 2560) : undefined;
       // Measured on the raw capture for this render only: where nothing on screen changes, so those moments can be cut.
       if (presentation.compressPauses && observation.idleRanges !== undefined && observation.directed) {

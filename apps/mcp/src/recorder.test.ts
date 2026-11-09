@@ -38,7 +38,8 @@ it('isolates owners, preserves captured data on render failure and permits retry
     await recorder.call(owner, 'recording_stop', { id });
     expect(driver.stopRecording).toHaveBeenCalledTimes(1);
     await recorder.call(owner, 'recording_render', { id });
-    expect(render.mock.calls[0]?.[1]).toMatchObject({ padding: 0, borderRadius: 0, showShadow: false });
+    // Without a brand, the demo sits on Toru's Mist with a thin frame.
+    expect(render.mock.calls[0]?.[1]).toMatchObject({ padding: 8, wallpaper: '/wallpapers/toru-mist.jpg' });
     await vi.waitFor(async () => expect((await recorder.call(owner, 'recording_status', { id })).structuredContent?.status).toBe('captured'));
     expect(await readFile(join(dir, 'jobs', id, 'raw.webm'), 'utf8')).toBe('raw capture');
     render.mockImplementationOnce((_source, _config, signal) => new Promise((_resolve, reject) => {

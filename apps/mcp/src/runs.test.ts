@@ -51,6 +51,8 @@ async function harness(options?: Parameters<typeof fake>[0]) {
   const controller = new RunController(recorder, { artifactDir: async () => dir }, db);
   // A handoff nobody takes ends quickly here; in production the agent gets two minutes to notice.
   controller.handoffIdleMs = 100;
+  // The hold on the result is the video's ending (zoom, release, wide shot); here it only slows every test down.
+  controller.resultHoldMs = 50;
   // Every run writes a last checkpoint when it ends; let that land before the database closes under it.
   cleanups.push(async () => {
     await Promise.allSettled([...(controller as unknown as { runs: Map<string, { done: Promise<void> }> }).runs.values()].map(run => run.done));
