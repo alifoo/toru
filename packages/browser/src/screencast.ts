@@ -215,7 +215,8 @@ export class CdpScreencastRecorder {
     socket.addEventListener("message", (event) => recorder.#onMessage(event));
     recorder.#send("Page.startScreencast", {
       format: "jpeg",
-      quality: options.quality ?? 70,
+      // Small text on flat colour is what a demo shows; at 70 its JPEG edges blurred into the video, at 90 they hold.
+      quality: options.quality ?? 90,
       maxWidth: options.width,
       maxHeight: options.height,
       everyNthFrame: 1,

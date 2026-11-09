@@ -209,7 +209,7 @@ async function closeSession() {
   active.transport.close();
   await worker('close', { tabId: active.tabId }).catch(() => undefined);
 }
-async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?: unknown }) {
+async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?: unknown; sharpCapture?: unknown }) {
   if (typeof input?.url !== 'string') throw new Error('local_method_forbidden');
   const product = new URL(input.url);
   const allowedOrigins = Array.isArray(input.allowedOrigins) ? input.allowedOrigins.filter((origin): origin is string => typeof origin === 'string') : [product.origin];
@@ -225,7 +225,9 @@ async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?:
   // viewport at exactly that scale: any other makes each captured frame re-render the user's window (renderScaleFor).
   const screenScale = await channel.send('Runtime.evaluate', { expression: 'devicePixelRatio', returnByValue: true })
     .then((result) => (result as { result?: { value?: unknown } }).result?.value, () => undefined);
-  const render = renderScaleFor(screenScale);
+  // Asked for a sharp capture, a 1x screen renders at the capture scale anyway (2560 wide): the socket then renders
+  // each frame itself, which flickers the window, a cost the recording chose. A denser screen keeps its own scale.
+  const render = input.sharpCapture === true ? Math.max(renderScaleFor(screenScale), scale) : renderScaleFor(screenScale);
   useDebuggerChannel(channel, scale, render);
   let sessionPath = '';
   // The screencast asks for the viewport at `scale` (2560 device pixels wide at most): on a Retina screen Chrome scales
