@@ -951,7 +951,11 @@ final class Studio: ObservableObject {
                         // While Toru operates the window, the navigator looks at it after each step.
                         guard let source = selectedSource else { throw ToruError(message: "Source unavailable") }
                         let config = SCStreamConfiguration()
-                        config.width = source.width; config.height = source.height; config.showsCursor = false
+                        // The window as it is now, in points: the space the outline's positions and the agent's clicks
+                        // are in. The size listed earlier can be stale (a tiling window manager undid Toru's resize).
+                        let now = source.windowIDs.first.flatMap(AccessibilityOutline.bounds(of:))?.size
+                        config.width = now.map { Int($0.width) } ?? source.width; config.height = now.map { Int($0.height) } ?? source.height
+                        config.showsCursor = false
                         let image = try await SCScreenshotManager.captureImage(contentFilter: source.filter, configuration: config)
                         guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { throw ToruError(message: "Screenshot unavailable") }
                         result = ["body": ["$bytes": png.base64EncodedString()], "contentType": "image/png", "redactionPassed": false]
@@ -966,7 +970,7 @@ final class Studio: ObservableObject {
                     case "readPage", "pageText", "pointer", "gesture", "formInput", "typeText", "pressKey", "scrollBy", "redactSensitiveText":
                         let operated = try desktopControl()
                         let arguments = command["args"] as? [Any] ?? []
-                        result = try await Task.detached { try operated.handle(method, arguments) }.value
+                        result = try await StepLimit.run(seconds: DesktopControl.answerLimit(method)) { try operated.handle(method, arguments) }
                     case "dispose":
                         control?.endRecording()
                         if recording { _ = try await finalize() }
@@ -992,7 +996,7 @@ final class Studio: ObservableObject {
                     // which decides the next step; the share and the recording continue. Capture failures still end the share.
                     if DesktopControl.methods.contains(method) {
                         let message = error.localizedDescription
-                        let code = message.hasPrefix("local_sign_in_required") ? "local_sign_in_required" : message.hasPrefix("local_method_forbidden") ? "local_method_forbidden" : "local_browser_action_failed"
+                        let code = ["local_sign_in_required", "local_method_forbidden", "local_action_timeout"].first { message.hasPrefix($0) } ?? "local_browser_action_failed"
                         if connectionGeneration == generation { _ = try? await post("result/\(id)", ["error": code]) }
                         continue
                     }

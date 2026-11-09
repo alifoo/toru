@@ -10,13 +10,14 @@ struct PointerSample {
 }
 
 enum InputError: LocalizedError {
-    case secureField, unsupported(String), notFound(String), refused(String)
+    case secureField, unsupported(String), notFound(String), refused(String), timedOut(String)
     var errorDescription: String? {
         switch self {
         case .secureField: return "local_sign_in_required"
         case .unsupported(let what): return "unsupported: \(what)"
         case .notFound(let what): return "not found: \(what)"
         case .refused(let what): return "local_method_forbidden: \(what)"
+        case .timedOut(let what): return "local_action_timeout: \(what)"
         }
     }
 }
@@ -36,6 +37,9 @@ final class InputDriver {
     private(set) var telemetry: [PointerSample] = []
     private(set) var timeline: [[String: Any]] = []
     private var cursor: CGPoint?
+    /// When the current step must be done (DesktopControl sets it per step): walks up the Accessibility tree stop there,
+    /// and a press not yet made by then is not made late.
+    var deadline = Date.distantFuture
     /// Characters per second while typing, so the video shows text being typed.
     /// About nine characters a second with a human jitter, the cadence a web recording types at; an even 22 a
     /// second read as machine-generated.
@@ -171,7 +175,7 @@ final class InputDriver {
         let area = max(1, target.frame.width * target.frame.height), limit = window.width * window.height * 0.5
         var found: CGRect?
         var node: AXUIElement? = target.element
-        for _ in 0..<20 {
+        for _ in 0..<20 where Date() < deadline {
             var parent: AnyObject?
             guard let current = node, AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parent) == .success,
                   let next = parent else { break }
@@ -243,7 +247,7 @@ final class InputDriver {
         let containers: Set<String> = ["AXTable", "AXOutline", "AXList", "AXGrid"]
         var node: AXUIElement? = target.element
         var own: AXUIElement?
-        for _ in 0..<15 {
+        for _ in 0..<15 where Date() < deadline {
             guard let current = node else { break }
             let role = attribute(current, kAXRoleAttribute) as? String ?? ""
             if role == "AXRow" { own = current }
@@ -273,11 +277,12 @@ final class InputDriver {
         let actions = target.visual ? [] : actionNames(target.element)
         let center = CGPoint(x: target.frame.midX, y: target.frame.midY)
         let inFront = NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+        guard Date() < deadline else { throw InputError.timedOut("the app did not answer before the click") }
         markPress()
         if target.visual {
             guard ownsPoint(center) else { throw InputError.refused("the window is not on screen") }
             clickAt(center)
-        } else if !["textbox", "searchbox"].contains(target.role), inFront, window.contains(center), ownsPoint(center), Self.isWebContent(target.element) {
+        } else if !["textbox", "searchbox"].contains(target.role), inFront, window.contains(center), ownsPoint(center), Self.isWebContent(target.element, until: deadline) {
             // In web content (Electron apps such as Linear and Cursor) AXPress on links, menu items, tabs and buttons
             // is acknowledged and then ignored often enough that a recording stalls, or reports a change that never
             // happened; with the app in front and on screen, a real click where the control is always lands.
@@ -310,9 +315,9 @@ final class InputDriver {
     }
 
     /// Inside a web area (Chromium, Electron, WebKit views), where Accessibility actions are not always honoured.
-    static func isWebContent(_ element: AXUIElement) -> Bool {
+    static func isWebContent(_ element: AXUIElement, until deadline: Date = .distantFuture) -> Bool {
         var node: AXUIElement? = element
-        for _ in 0..<40 {
+        for _ in 0..<40 where Date() < deadline {
             guard let current = node else { return false }
             var role: AnyObject?
             AXUIElementCopyAttributeValue(current, kAXRoleAttribute as CFString, &role)
@@ -332,7 +337,7 @@ final class InputDriver {
         }
         glide(to: CGPoint(x: target.frame.midX, y: target.frame.midY), window: window, kind: "click")
         let fieldCenter = CGPoint(x: target.frame.midX, y: target.frame.midY)
-        let webField = NSWorkspace.shared.frontmostApplication?.processIdentifier == pid && Self.isWebContent(target.element) && ownsPoint(fieldCenter)
+        let webField = NSWorkspace.shared.frontmostApplication?.processIdentifier == pid && Self.isWebContent(target.element, until: deadline) && ownsPoint(fieldCenter)
         markPress()
         if target.visual || webField {
             guard ownsPoint(fieldCenter) else { throw InputError.refused("the window is not on screen") }
@@ -466,7 +471,7 @@ final class InputDriver {
     func type(_ text: String, into element: AXUIElement) throws {
         guard (attribute(element, kAXSubroleAttribute) as? String) != kAXSecureTextFieldSubrole as String else { throw InputError.secureField }
         // Web content takes text only from key events (it acknowledges and drops Accessibility edits).
-        if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid, Self.isWebContent(element),
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid, Self.isWebContent(element, until: deadline),
            let frame = elementFrame(element), ownsPoint(CGPoint(x: frame.midX, y: frame.midY)) { try typeKeys(text); return }
         var first = true
         for character in text {
@@ -572,7 +577,7 @@ final class InputDriver {
         guard let root = reader.window() else { return nil }
         var best: (AXUIElement, CGFloat)?
         var queue = [root], visited = 0
-        while !queue.isEmpty, visited < 1500 {
+        while !queue.isEmpty, visited < 1500, Date() < deadline {
             let node = queue.removeFirst(); visited += 1
             if (attribute(node, kAXRoleAttribute) as? String) == kAXScrollAreaRole as String, let frame = reader.frame(of: node) {
                 let size = frame.width * frame.height

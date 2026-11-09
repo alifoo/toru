@@ -573,9 +573,16 @@ it('opens the user\'s Chrome at the chosen page layout, 1920x1080 by default, an
   const laptop=String((await recorder.call(owner,'session_open',{url:'https://app.example.com/',localConnectionId:randomUUID(),viewport:'1440x900'})).structuredContent?.id);
   expect(createLocalContext.mock.calls[2]![2].viewport).toEqual({width:1440,height:900});
   await recorder.call(owner,'session_close',{id:laptop});
+  // A Mac window's screenshot is in window points, the space of its outline and clicks; the video frame it reports
+  // as captureViewport (the window plus a margin) is not a scale for it (Linear at 1442x901, 2026-11-08).
+  const mac=String((await recorder.call(owner,'session_open',{url:'https://app.example.com/',localConnectionId:randomUUID()})).structuredContent?.id);
+  Object.assign(driver,{capturePrivacy:'user-approved-desktop',captureViewport:{width:1920,height:1080},
+   screenshot:vi.fn(async()=>({body:png(1442,901),contentType:'image/png',redactionPassed:false}))});
+  expect((await recorder.call(owner,'browser_observe',{id:mac,mode:'screenshot'})).structuredContent).not.toHaveProperty('screenshotScale');
+  await recorder.call(owner,'session_close',{id:mac});
   // Only the presets.
   await expect(recorder.call(owner,'session_open',{url:'https://app.example.com/',localConnectionId:randomUUID(),viewport:'2560x1440'})).rejects.toThrow(/Invalid option/);
-  expect(createLocalContext).toHaveBeenCalledTimes(3);
+  expect(createLocalContext).toHaveBeenCalledTimes(4);
  }finally{await recorder.close();await rm(dir,{recursive:true,force:true});}
 });
 

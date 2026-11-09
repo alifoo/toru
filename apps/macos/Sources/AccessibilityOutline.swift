@@ -41,6 +41,9 @@ final class AccessibilityOutline {
     /// The document the read window shows ("README.md" of "README.md — toru-skills"), to name its editor.
     private var document: String?
     private let textLimit = 6_000
+    /// When the read in progress stops walking: an app busy laying out (Linear right after a click) answers each
+    /// Accessibility call slowly, and thousands of them held a step for over a minute (2026-11-08).
+    private var readDeadline = Date.distantFuture
 
     init(pid: pid_t, windowID: CGWindowID? = nil) {
         self.pid = pid
@@ -96,8 +99,11 @@ final class AccessibilityOutline {
         abs(a.minX - b.minX) < 3 && abs(a.minY - b.minY) < 3 && abs(a.width - b.width) < 3 && abs(a.height - b.height) < 3
     }
 
-    func read(includeMenuBar: Bool = true) -> OutlineSnapshot? {
+    /// What the window shows, walked until `deadline`: past it the outline holds what was read so far and says so.
+    func read(includeMenuBar: Bool = true, until deadline: Date = .distantFuture) -> OutlineSnapshot? {
         let started = Date()
+        readDeadline = deadline
+        defer { readDeadline = .distantFuture }
         guard let window = window(), let windowFrame = frame(of: window) else { return nil }
         document = (attribute(window, kAXTitleAttribute) as? String).flatMap(Self.document(inTitle:))
         var lines: [String] = []
@@ -108,7 +114,7 @@ final class AccessibilityOutline {
         var identity: [CGRect] = []
         var squashed: [CGRect] = [], containers: [CGRect] = []
         var web = false
-        var visited = 0, index = 0
+        var visited = 0, index = 0, cut = false
         let windowArea = max(1, windowFrame.width * windowFrame.height)
 
         func note(_ value: String) {
@@ -120,6 +126,7 @@ final class AccessibilityOutline {
         /// `holder`: the small control this element sits in (an account button holds the name and the picture).
         func walk(_ element: AXUIElement, depth: Int, scope: String?, clip: CGRect, holder: CGRect?) {
             guard visited < nodeLimit, depth < 60 else { return }
+            if Date() >= readDeadline { cut = true; return }
             visited += 1
             let values = attributes(element, [kAXRoleAttribute, kAXSubroleAttribute, kAXTitleAttribute, kAXDescriptionAttribute,
                                               kAXValueAttribute, kAXEnabledAttribute, kAXFocusedAttribute, kAXSelectedAttribute,
@@ -204,7 +211,7 @@ final class AccessibilityOutline {
         // A menu the app has open (a toolbar's popup, a context menu) is a window of its own above the shared one, and
         // can reach past its edge (Books' "Seções"): its items are read too, so picking one is a choice the navigator sees.
         for popup in Self.openMenus(pid: pid, near: windowFrame)
-        where !targets.values.contains(where: { $0.role == "menuitem" && popup.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }) {
+        where !cut && !targets.values.contains(where: { $0.role == "menuitem" && popup.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }) {
             var hit: AXUIElement?
             AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(popup.midX), Float(popup.minY + min(40, popup.height / 2)), &hit)
             var node = hit
@@ -215,7 +222,7 @@ final class AccessibilityOutline {
             guard let menu = node, AXUIElementGetPid(menu, &owner) == .success, owner == pid else { continue }
             walk(menu, depth: 0, scope: "open menu", clip: popup, holder: nil)
         }
-        if includeMenuBar, let bar = attribute(app, kAXMenuBarAttribute) {
+        if includeMenuBar, !cut, let bar = attribute(app, kAXMenuBarAttribute) {
             // Top-level menus only: opening one is an action, and its items are read after it opens.
             for item in ((attribute(bar as! AXUIElement, kAXChildrenAttribute) as? [AXUIElement]) ?? []).dropFirst() {
                 let values = attributes(item, [kAXTitleAttribute, kAXPositionAttribute, kAXSizeAttribute])
@@ -227,6 +234,7 @@ final class AccessibilityOutline {
             }
         }
         scrollAreas += Self.clippedRegions(squashed: squashed, containers: containers, window: windowFrame)
+        if cut { lines.append("  (read cut short after \(visited) elements: the app answered too slowly. Observe again in a moment for the rest.)") }
         let header = "Scroll areas (layout only; offscreen content is not visual proof): " + Self.jsonObject(["regions": scrollAreas])
         return OutlineSnapshot(outline: ([header] + lines).joined(separator: "\n"), text: texts.joined(separator: "\n"),
                                window: windowFrame, targets: targets, elements: index, milliseconds: Int(Date().timeIntervalSince(started) * 1000),
@@ -352,7 +360,7 @@ final class AccessibilityOutline {
         var parts: [String] = []
         var seen = 0
         func collect(_ node: AXUIElement, depth: Int) {
-            guard seen < 40, depth < 6, parts.joined(separator: " ").count < 120 else { return }
+            guard seen < 40, depth < 6, parts.joined(separator: " ").count < 120, Date() < readDeadline else { return }
             seen += 1
             let v = attributes(node, [kAXRoleAttribute, kAXValueAttribute, kAXTitleAttribute, kAXChildrenAttribute])
             if (v[kAXRoleAttribute] as? String) == kAXStaticTextRole as String, let text = v[kAXValueAttribute] as? String, !text.isEmpty { parts.append(text) }

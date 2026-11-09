@@ -789,8 +789,11 @@ export class Recorder {
       images.push({ type: 'image', mimeType: shot.contentType, data: Buffer.from(shot.body).toString('base64') });
       // Coordinates are CSS pixels of the page. A viewport wider than the screenshot (Toru for Chrome observes a
       // 1920x1080 layout as 1280x720) says so, for an agent that reads a position off the picture.
+      // A Mac window's screenshot is already in window points, the space of its outline and clicks; its
+      // captureViewport is the video frame (the window plus a margin), and a scale from it told an agent driving
+      // Linear that its 1442-wide screenshot was 0.75 of a 1920x1080 viewport (2026-11-08).
       const viewport = driver.captureViewport, width = pngWidth(shot.body);
-      if (viewport && width && width < viewport.width) Object.assign(data, { viewport: { ...viewport }, screenshotScale: Math.round(width / viewport.width * 10_000) / 10_000 });
+      if (viewport && width && width < viewport.width && driver.capturePrivacy !== 'user-approved-desktop') Object.assign(data, { viewport: { ...viewport }, screenshotScale: Math.round(width / viewport.width * 10_000) / 10_000 });
     }
     if (typeof driver.pageText === 'function') active.pageSignature = await this.pageSignature(driver);
     this.assertActive(active);

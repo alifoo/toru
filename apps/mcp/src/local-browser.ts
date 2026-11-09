@@ -285,7 +285,8 @@ export class LocalBrowserBridge {
     }
     if(value?.body==='local_video_upload'){if(!pending.video)throw new Error('missing_video');value.body=pending.video;}
     clearTimeout(pending.timer);delete d.pending;
-    if(input.error)pending.reject(new Error(['local_sign_in_required','local_navigation_blocked','local_method_forbidden'].includes(input.error)?input.error:'local_browser_action_failed'));
+    // local_action_timeout: a Mac step the operated app did not answer in time (Toru for Mac after 0.4.5); the share goes on.
+    if(input.error)pending.reject(new Error(['local_sign_in_required','local_navigation_blocked','local_method_forbidden','local_action_timeout'].includes(input.error)?input.error:'local_browser_action_failed'));
     else pending.resolve({value,meta:input.meta});
     if(pending.command.method==='dispose'){
      // A shared Mac stays ready for the next recording until the user stops sharing; only the session claim ends.

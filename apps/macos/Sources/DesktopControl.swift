@@ -16,6 +16,13 @@ final class DesktopControl: @unchecked Sendable {
     static var available: Bool { AXIsProcessTrusted() }
     /// The page methods this class answers; the app keeps sharing when one of them fails.
     static let methods: Set<String> = ["readPage", "pageText", "pointer", "gesture", "formInput", "typeText", "pressKey", "scrollBy", "redactSensitiveText"]
+    /// How long a step's Accessibility work may run: then it stops where it is and the agent hears local_action_timeout.
+    static let stepLimit: TimeInterval = 20
+    /// How long reading the window may take within a step; past it the outline lists what was read so far.
+    static let readLimit: TimeInterval = 8
+    /// When the agent hears about a step that has not answered (StepLimit), whatever it is stuck in: under the server's
+    /// 45 s per step. Typing goes a character at a time and takes longer than any other step.
+    static func answerLimit(_ method: String) -> TimeInterval { ["formInput", "typeText"].contains(method) ? 40 : stepLimit + 5 }
     /// Asks macOS for the Accessibility permission (opens the system prompt once).
     static func requestPermission() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
@@ -28,6 +35,8 @@ final class DesktopControl: @unchecked Sendable {
     private let reader: AccessibilityOutline
     private var driver: InputDriver
     private var snapshot: OutlineSnapshot?
+    /// The window's frame (window server) when `snapshot` was read: refs point where the controls were then.
+    private var snapshotBounds: CGRect?
     private let lock = NSLock()
     /// The window's size at the last read, in points: telemetry is a fraction of it.
     private(set) var windowSize = CGSize(width: 1, height: 1)
@@ -40,6 +49,9 @@ final class DesktopControl: @unchecked Sendable {
         self.windowID = windowID
         bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "unknown"
         guard !Self.denied.contains(bundle) else { throw ToruError(message: "local_method_forbidden: Toru does not operate this app") }
+        // Every Accessibility call of this app waits at most 2 s for the operated app (macOS's default is 6 s), so a
+        // busy app slows a step down instead of holding it for minutes. The app and window elements already use 1 s.
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 2.0)
         reader = AccessibilityOutline(pid: pid, windowID: windowID)
         reader.enableFullTree()
         driver = InputDriver(reader: reader)
@@ -57,7 +69,8 @@ final class DesktopControl: @unchecked Sendable {
 
     /// Telemetry from here on lines up with the recording that starts now.
     func beginRecording(at start: Date) {
-        lock.withLock { driver = InputDriver(reader: reader, started: start); recording = true; recordingStarted = start; sightings = []; placement = nil }
+        // What was read before is forgotten: the recording may give the window another size right after this.
+        lock.withLock { driver = InputDriver(reader: reader, started: start); recording = true; recordingStarted = start; sightings = []; placement = nil; snapshot = nil; snapshotBounds = nil }
         bringForward()
     }
     /// Many apps apply toolbar and menu actions to the active window only (TextEdit's Bold does nothing in the
@@ -95,7 +108,17 @@ final class DesktopControl: @unchecked Sendable {
             let target = snapshot?.targets[ref]
             FileHandle.standardError.write("toru control \(method) \(ref) \(target?.label ?? "") visual=\(target?.visual ?? false) front=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?")\n".data(using: .utf8)!)
         }
-        let result = try lock.withLock { try perform(method, args) }
+        // A step StepLimit stopped waiting for may still be running: the next one waits a moment for it, then says so
+        // rather than queueing behind it.
+        guard lock.lock(before: Date().addingTimeInterval(3)) else {
+            throw ToruError(message: "local_action_timeout: the previous step is still waiting for the app")
+        }
+        let result: Any
+        do {
+            defer { lock.unlock() }
+            driver.deadline = Date().addingTimeInterval(Self.stepLimit)
+            result = try perform(method, args)
+        }
         // A beat after each visible step, so the video shows its result before the next one starts.
         if ["pointer", "gesture", "formInput", "typeText", "pressKey", "scrollBy"].contains(method) { Thread.sleep(forTimeInterval: 0.6) }
         return result
@@ -105,10 +128,12 @@ final class DesktopControl: @unchecked Sendable {
         // Apps listed in the visualOnlyApps preference are read from pixels only, as if they had no tree.
         let visualOnly = (UserDefaults.standard.stringArray(forKey: "visualOnlyApps") ?? []).contains(bundle)
         let canvas = visualOnly || VisualOutline.canvasApps.contains(bundle)
-        var tree = visualOnly ? nil : reader.read()
+        let limit = min(driver.deadline, Date().addingTimeInterval(Self.readLimit))
+        let bounds = AccessibilityOutline.bounds(of: windowID)
+        var tree = visualOnly ? nil : reader.read(until: limit)
         // Electron and Chromium build their tree a moment after the first request; canvas apps never do.
-        for _ in 0..<(canvas ? 0 : 12) where (tree?.targets.values.filter { $0.role != "menubaritem" }.count ?? 0) < 1 {
-            Thread.sleep(forTimeInterval: 0.25); tree = reader.read()
+        for _ in 0..<(canvas ? 0 : 12) where (tree?.targets.values.filter { $0.role != "menubaritem" }.count ?? 0) < 1 && Date() < limit {
+            Thread.sleep(forTimeInterval: 0.25); tree = reader.read(until: limit)
         }
         // No window in the tree at all (Figma): start from the window's frame as the window server reports it.
         if tree == nil, let bounds = AccessibilityOutline.bounds(of: windowID) {
@@ -118,6 +143,7 @@ final class DesktopControl: @unchecked Sendable {
         // Little or nothing in the tree (canvas apps, closed Electron apps): read the window's pixels as well.
         let current = VisualOutline.augment(tree, windowID: windowID, pid: pid, force: canvas)
         snapshot = current
+        snapshotBounds = bounds
         windowSize = current.window.size
         if recording, let started = recordingStarted, sightings.count < 2_000 {
             let w = max(1, current.window.width), h = max(1, current.window.height)
@@ -126,9 +152,19 @@ final class DesktopControl: @unchecked Sendable {
         }
         return current
     }
+    /// The last read while the window is where it was then, otherwise a new one. A window that moved or changed size
+    /// since (Toru's size preset, a tiling window manager laying it out again, the user) has its controls elsewhere:
+    /// a step by ref is refused so the agent observes again, instead of acting where a control used to be.
+    private func latest(byRef: Bool) throws -> OutlineSnapshot {
+        if snapshot != nil, let then = snapshotBounds, let now = AccessibilityOutline.bounds(of: windowID), !WindowSizing.same(now, then) {
+            snapshot = nil; snapshotBounds = nil
+            if byRef { throw ToruError(message: "stale element reference: the window moved or changed size since it was read; observe again") }
+        }
+        return try snapshot ?? read()
+    }
     private func target(_ ref: Any?) throws -> (OutlineTarget, CGRect) {
         guard let ref = ref as? String else { throw ToruError(message: "local_method_forbidden: missing ref") }
-        let current = try snapshot ?? read()
+        let current = try latest(byRef: true)
         guard let target = current.targets[ref] else { throw ToruError(message: "stale element reference") }
         return (target, current.window)
     }
@@ -142,14 +178,14 @@ final class DesktopControl: @unchecked Sendable {
         case "pageText":
             // Reading the text must not renumber the controls the navigator is about to act on: Electron trees grow
             // between reads, so a fresh snapshot here sent "Issues" to whatever ref_26 had become ("Agent").
-            let kept = snapshot
+            let kept = snapshot, keptBounds = snapshotBounds
             let text = try read().text
-            if let kept { snapshot = kept }
+            if let kept { snapshot = kept; snapshotBounds = keptBounds }
             return text
         case "pointer":
             let action = args.first as? String ?? "left_click"
             let spec = args.count > 1 ? args[1] as? [String: Any] : nil
-            let current = try snapshot ?? read()
+            let current = try latest(byRef: spec?["type"] as? String == "ref")
             let resolved: OutlineTarget
             if spec?["type"] as? String == "ref" {
                 resolved = try target(spec?["ref"]).0
@@ -184,7 +220,7 @@ final class DesktopControl: @unchecked Sendable {
             }
             let spec = args.count > 1 ? args[1] as? [String: Any] : nil
             let rows = (args.count > 2 ? args[2] as? [String: Any] : nil)?["rows"] as? Int ?? 4
-            let current = try snapshot ?? read()
+            let current = try latest(byRef: spec?["type"] as? String == "ref")
             if spec?["type"] as? String == "ref" {
                 let (resolved, window) = try target(spec?["ref"])
                 try driver.gesture(kind, resolved, at: nil, window: window, rows: rows)
@@ -224,7 +260,7 @@ final class DesktopControl: @unchecked Sendable {
             return NSNull()
         case "scrollBy":
             let spec = args.first as? [String: Any]
-            let current = try snapshot ?? read()
+            let current = try latest(byRef: false)
             let x = spec?["x"] as? Double ?? current.window.width / 2, y = spec?["y"] as? Double ?? current.window.height / 2
             try driver.scroll(at: CGPoint(x: x, y: y), direction: args.count > 1 ? (args[1] as? String ?? "down") : "down",
                               amount: args.count > 2 ? (args[2] as? Double ?? 400) : 400, window: current.window)
@@ -253,8 +289,19 @@ final class DesktopControl: @unchecked Sendable {
 
     /// Cursor path, clicks and actions in the renderer's format (fractions of the recorded frame: the window, or the
     /// region around it; ms from the recording start).
-    func telemetry() -> (pointer: [[String: Any]], trail: [[String: Any]], timeline: [[String: Any]], identity: [[String: Any]]) {
-        lock.withLock {
+    typealias Telemetry = (pointer: [[String: Any]], trail: [[String: Any]], timeline: [[String: Any]], identity: [[String: Any]])
+    /// The last telemetry given: read and written on the main thread only, where telemetry() is asked.
+    private var lastTelemetry: Telemetry = ([], [], [], [])
+    func telemetry() -> Telemetry {
+        // Asked after every command: while a step StepLimit gave up on still holds the lock, the last telemetry is given
+        // instead of freezing the app until the operated app answers.
+        guard lock.lock(before: Date().addingTimeInterval(0.2)) else { return lastTelemetry }
+        defer { lock.unlock() }
+        lastTelemetry = currentTelemetry()
+        return lastTelemetry
+    }
+    private func currentTelemetry() -> Telemetry {
+        do {
             let ww = max(1, windowSize.width), wh = max(1, windowSize.height)
             // Window points to frame fractions.
             let ox = placement?.offset.x ?? 0, oy = placement?.offset.y ?? 0
