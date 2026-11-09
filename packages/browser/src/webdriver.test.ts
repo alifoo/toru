@@ -1807,6 +1807,10 @@ describe("gestures", () => {
       expect(fractions.at(-1)).toBe(1);
       expect(fractions.every((value, index) => index === 0 || value >= fractions[index - 1]!)).toBe(true);
       expect(context.semanticTimeline().at(-1)).toMatchObject({ type: "emphasis", focus: { x: 200 / 1280, y: 400 / 720 } });
+      // It leaves the passage sideways, never down onto the toolbar an editor opens under a selection.
+      const rest = (context as unknown as { pointerTelemetry(): Array<{ x: number; y: number }> }).pointerTelemetry().at(-1)!;
+      expect(rest.y * 720).toBeLessThanOrEqual(420);
+      expect(rest.x * 1280).toBeGreaterThan(500);
       protocol.passage = { missing: true };
       await expect(context.gesture("highlight", { type: "coordinate", x: 300, y: 410 }, { text: "absent" })).rejects.toMatchObject({ code: "text_to_highlight_not_found" });
     } finally {

@@ -2130,7 +2130,6 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
     // The passage's line boxes, measured first for the same reason.
     let lines: Box[] = [];
     let characters = 0;
-    let endsOnControl = false;
     if (kind === "highlight") {
       const raw = await this.executeScript("gesture_text", highlightScript, [{ [elementKey]: element }, (options.text ?? "").slice(0, 300), "measure"]);
       if (!isObject(raw) || raw.missing === true) throw new WebDriverProtocolError("text_to_highlight_not_found");
@@ -2139,7 +2138,6 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
         .filter(line => [line.x, line.y, line.width, line.height].every(Number.isFinite));
       if (!lines.length) throw new WebDriverProtocolError("text_to_highlight_not_found");
       characters = numeric(raw.length, 20);
-      endsOnControl = raw.endsOnControl === true;
     }
     const startedAt = Date.now();
     const inside = (point: Point): Point => ({
@@ -2172,14 +2170,18 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
         }, undefined, progress => this.executeScript("gesture_select", highlightScript, [{ [elementKey]: element }, passage, "select", minimumJerk(progress)])
           .catch(() => undefined));
         this.driverShape = shape;
-        if (endsOnControl) {
-          // Resting on a link opens its hover card (Wikipedia's page preview) over the passage: step just below the line.
-          const below = inside({ x: to.x, y: Math.round(last.y + last.height + 14) });
-          await this.glidePointer(220, progress => {
-            const eased = minimumJerk(progress);
-            return { x: Math.round(to.x + (below.x - to.x) * eased), y: Math.round(to.y + (below.y - to.y) * eased) };
-          });
-        }
+        // Off the passage's last word, sideways: resting on a link opens its hover card (Wikipedia's page preview), and
+        // an editor (Notion, Docs) opens its formatting toolbar just under a selection, so a step down landed on the
+        // toolbar's "Normal Text" and opened its menu on camera. Beside the line is clear of both; above when the line
+        // reaches the edge of the window.
+        const besideX = to.x + 36;
+        const aside = besideX < viewWidth - 8
+          ? inside({ x: besideX, y: to.y })
+          : inside({ x: to.x, y: Math.round(first.y - 18) });
+        await this.glidePointer(220, progress => {
+          const eased = minimumJerk(progress);
+          return { x: Math.round(to.x + (aside.x - to.x) * eased), y: Math.round(to.y + (aside.y - to.y) * eased) };
+        });
         await this.restPointer(500 + this.motion() * 300);
         const top = Math.min(...lines.map(line => line.y)), bottom = Math.max(...lines.map(line => line.y + line.height));
         const left = Math.min(...lines.map(line => line.x)), right = Math.max(...lines.map(line => line.x + line.width));
