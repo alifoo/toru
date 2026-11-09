@@ -6,22 +6,22 @@ import { DEBUGGER_ADDRESS } from './config.js';
  * In the extension there is no DevTools port: both are answered here, over the chrome.debugger session of
  * the tab being recorded. Every other request goes to the real fetch and WebSocket untouched.
  *
- * Chrome's screencast captures the window as it is on screen. When the window is smaller than the
- * recording viewport (a small screen, a window manager, a resize), its frames would be cropped, so the
- * socket switches to rendering the viewport itself with Page.captureScreenshot, which always renders the whole
- * emulated viewport (1920x1080 by default, at its device scale), and hands those frames to the recorder as screencast
- * frames. That is also what happens when the viewport is larger than the screen can show (a 1920x1080 viewport on a
- * 1440x900 laptop): the device metrics override keeps the layout at the full viewport, the window shows part of it.
+ * The tab renders the emulated viewport (1920x1080 by default) at the screen's own device scale (renderScaleFor), and
+ * then Chrome's screencast holds the whole viewport even when the window shows only part of it (a 1920x1080 viewport
+ * on a 1440x900 laptop): the device metrics override keeps the layout at the full viewport. The recorder asks for the
+ * screencast in device pixels (the viewport times the capture scale, which may be fractional: 1920 at 4/3 is 2560),
+ * while Chrome reports each frame's size in CSS pixels, so the two are compared through the scale. A frame is only as
+ * dense as the tab renders: 1920 wide on a 1x screen, which is kept.
  *
- * The recorder asks for the screencast in device pixels (the viewport times the capture scale, which may be
- * fractional: 1920 at 4/3 is 2560), while Chrome reports each frame's size in CSS pixels, so the two are compared
- * through the scale. Chrome's screencast is only as dense as the screen the window is on: on a 1x display it sends
- * one pixel per CSS pixel whatever the emulated scale. Page.captureScreenshot renders at the emulated scale on any
- * screen, so there the socket renders frames as well.
+ * Should the first frame show less than the viewport, or less densely than the tab renders, the socket switches to
+ * rendering the viewport itself with Page.captureScreenshot and hands those frames to the recorder as screencast
+ * frames. At the screen's own scale that capture leaves the window as it is; at any other scale Chrome re-renders the
+ * window for each capture and back, which the user saw as a flicker ~30 times a second.
  */
 let current: DebuggerChannel | undefined;
-let currentScale = 1;
-export function useDebuggerChannel(channel: DebuggerChannel | undefined, scale = 1) { current = channel; currentScale = scale; }
+let currentScale = 1, currentRenderScale = 1;
+/** `scale`: device pixels per CSS pixel the recorder asks for; `renderScale`: what the tab renders at (at most that dense). */
+export function useDebuggerChannel(channel: DebuggerChannel | undefined, scale = 1, renderScale = scale) { current = channel; currentScale = scale; currentRenderScale = renderScale; }
 
 const base = `http://${DEBUGGER_ADDRESS}`;
 const socketUrl = `ws://${DEBUGGER_ADDRESS}/devtools/page/toru`;
@@ -41,7 +41,7 @@ class DebuggerSocket extends EventTarget {
   private frames = 0;
   private lastFrameAt: number | undefined;
   private nextSynthetic = syntheticIds;
-  constructor(private readonly channel: DebuggerChannel, private readonly scale = 1) {
+  constructor(private readonly channel: DebuggerChannel, private readonly scale = 1, private readonly renderScale = scale) {
     super();
     this.unsubscribe = channel.onEvent((method, params) => {
       if (this.readyState !== 1 || method !== 'Page.screencastFrame') return;
@@ -52,7 +52,8 @@ class DebuggerSocket extends EventTarget {
         const viewport = cssViewport(this.wanted, this.scale);
         const pixels = jpegSize(frame.data);
         const cropped = Math.abs(deviceWidth - viewport.width) > 2 || Math.abs(deviceHeight - viewport.height) > 2;
-        const sparse = pixels !== undefined && (pixels.width < this.wanted.width - 2 || pixels.height < this.wanted.height - 2);
+        const dense = denseSize(this.wanted, this.scale, this.renderScale);
+        const sparse = pixels !== undefined && (pixels.width < dense.width - 2 || pixels.height < dense.height - 2);
         if (cropped || sparse) {
           void this.channel.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => undefined);
           void this.channel.send('Page.stopScreencast', {}).catch(() => undefined);
@@ -146,6 +147,13 @@ export function cssViewport(wanted: { width: number; height: number }, scale: nu
   return { width: Math.round(wanted.width / scale), height: Math.round(wanted.height / scale) };
 }
 
+/** The frame size the screencast can reach: what was asked for, or the viewport at the tab's own scale when that is less. */
+export function denseSize(wanted: { width: number; height: number }, scale: number, renderScale: number) {
+  if (!(renderScale < scale)) return { width: wanted.width, height: wanted.height };
+  const viewport = cssViewport(wanted, scale);
+  return { width: Math.round(viewport.width * renderScale), height: Math.round(viewport.height * renderScale) };
+}
+
 let lastStats: CaptureStats = { mode: 'idle', frames: 0 };
 /** How the last recording was captured, for diagnostics. */
 export function lastCaptureStats() { return lastStats; }
@@ -170,7 +178,7 @@ export function installDebuggerEndpoints() {
     construct(target, args: [string | URL, ...unknown[]]) {
       if (String(args[0]) === socketUrl) {
         if (!current) throw new Error('debugger_page_target_missing');
-        return new DebuggerSocket(current, currentScale) as unknown as WebSocket;
+        return new DebuggerSocket(current, currentScale, currentRenderScale) as unknown as WebSocket;
       }
       return Reflect.construct(target, args);
     },

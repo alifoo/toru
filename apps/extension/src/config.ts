@@ -26,13 +26,27 @@ export function chooseViewport(requested: unknown): Viewport {
 /** The widest frame a recording is captured at, in device pixels. */
 export const MAX_CAPTURE_WIDTH = 2560;
 /**
- * Device pixels per CSS pixel the recording tab renders and is captured at: at most 2, and never wider than 2560.
- * 1280x720 and 1920x1080 record as 2560x1440, 1440x900 as 2560x1600, so a 1920 or 2560 render and its zooms are
- * sharp. The encoder may settle for less on a machine that cannot encode that size, and a screen that shows the tab
- * at 1x can yield 1x frames; the recording reports its size.
+ * Device pixels per CSS pixel the recording is asked for: at most 2, and never wider than 2560. 1280x720 and
+ * 1920x1080 record as 2560x1440, 1440x900 as 2560x1600, so a 1920 or 2560 render and its zooms are sharp. The tab
+ * renders at the screen's own scale (renderScaleFor), so a 1x screen yields 1x frames, and the encoder may settle
+ * for less on a machine that cannot encode that size; the recording reports its size.
  */
 export function captureScaleFor(viewport: Viewport): number {
   return Math.min(2, MAX_CAPTURE_WIDTH / viewport.width);
+}
+/**
+ * Device pixels per CSS pixel the recording tab renders at: the screen's own (devicePixelRatio of the fresh tab at
+ * 100%), 1 to 3. Any other emulated scale makes every Page.captureScreenshot re-render the visible window at that
+ * scale and back (Chrome resizes the view for the capture, then restores it): the user's window flickered ~30 times
+ * a second while recording, and mouse events sent meanwhile landed at 3/4 of the point on a 1x screen and 1.5 times
+ * it on a Retina one. At the screen's own scale a capture leaves the view as it is, and Chrome's screencast already
+ * holds the whole viewport, however small the window: a Retina screen records 2560x1440 (Chrome scales its 3840
+ * frames down to the size asked for), a 1x screen 1920x1080.
+ */
+export function renderScaleFor(screenScale: unknown): number {
+  const scale = Number(screenScale);
+  if (!Number.isFinite(scale) || scale <= 0) return 1;
+  return Math.min(3, Math.max(1, scale));
 }
 /** The frame size a viewport is captured at: even integers, as a video encoder needs. */
 export function captureFrameSize(viewport: Viewport): Viewport {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DebuggerChannel } from '../../../packages/browser/src/cdp-webdriver.js';
 import { DEBUGGER_ADDRESS } from './config.js';
-import { cssViewport, installDebuggerEndpoints, jpegSize, liveCaptureStats, useDebuggerChannel } from './debugger-socket.js';
+import { cssViewport, denseSize, installDebuggerEndpoints, jpegSize, liveCaptureStats, useDebuggerChannel } from './debugger-socket.js';
 
 const RealWebSocket = globalThis.WebSocket, realFetch = globalThis.fetch;
 afterEach(() => { globalThis.WebSocket = RealWebSocket; globalThis.fetch = realFetch; useDebuggerChannel(undefined); });
@@ -23,10 +23,10 @@ function jpeg(width: number, height: number) {
   return Buffer.from([0xff, 0xd8, ...app0, ...sof, ...new Array(64).fill(0)]).toString('base64');
 }
 
-async function screencast(scale: number, viewport = { width: 1280, height: 720 }) {
+async function screencast(scale: number, viewport = { width: 1280, height: 720 }, renderScale = scale) {
   const fake = channel();
   installDebuggerEndpoints();
-  useDebuggerChannel(fake.value, scale);
+  useDebuggerChannel(fake.value, scale, renderScale);
   const socket = new WebSocket(`ws://${DEBUGGER_ADDRESS}/devtools/page/toru`);
   await new Promise((done) => socket.addEventListener('open', done, { once: true }));
   const messages: Array<{ method?: string; params?: { data?: string; metadata?: { deviceWidth?: number } } }> = [];
@@ -53,7 +53,40 @@ describe('Toru for Chrome screencast socket', () => {
     socket.close();
   });
 
-  it('renders a 1920x1080 viewport itself on a 1x screen, or when the window only shows part of it', async () => {
+  it('keeps Chrome\'s screencast of a tab rendering at a 1x screen\'s own scale: 1920x1080 frames, no captures', async () => {
+    // A captured frame at a scale that is not the screen's re-renders the user's window: the tab renders at 1x there.
+    const { socket, messages, sent, frame } = await screencast(2560 / 1920, { width: 1920, height: 1080 }, 1);
+    frame(1920, 1080, jpeg(1920, 1080));
+    await new Promise((done) => setTimeout(done, 60));
+    socket.close();
+    expect(messages.filter((message) => message.method === 'Page.screencastFrame')).toHaveLength(1);
+    expect(sent).not.toContain('Page.captureScreenshot');
+    expect(sent).not.toContain('Page.stopScreencast');
+  });
+
+  it('keeps a Retina tab\'s screencast, which Chrome scales from 3840 to the 2560 asked for', async () => {
+    const { socket, sent, frame } = await screencast(2560 / 1920, { width: 1920, height: 1080 }, 2);
+    frame(1920, 1080, jpeg(2560, 1440));
+    await new Promise((done) => setTimeout(done, 60));
+    socket.close();
+    expect(sent).not.toContain('Page.captureScreenshot');
+  });
+
+  it('still renders the viewport itself when even a 1x tab\'s frames show less of it', async () => {
+    const { socket, sent, frame } = await screencast(2560 / 1920, { width: 1920, height: 1080 }, 1);
+    frame(1424, 740, jpeg(1424, 740));
+    await new Promise((done) => setTimeout(done, 60));
+    socket.close();
+    expect(sent).toContain('Page.captureScreenshot');
+  });
+
+  it('measures how dense a screencast can be against the tab\'s own scale', () => {
+    expect(denseSize({ width: 2560, height: 1440 }, 2560 / 1920, 1)).toEqual({ width: 1920, height: 1080 });
+    expect(denseSize({ width: 2560, height: 1440 }, 2560 / 1920, 2)).toEqual({ width: 2560, height: 1440 });
+    expect(denseSize({ width: 2560, height: 1440 }, 2, 1.5)).toEqual({ width: 1920, height: 1080 });
+  });
+
+  it('renders a 1920x1080 viewport itself when the tab renders at 4/3 and the frames are 1x, or show part of it', async () => {
     for (const [width, height, data] of [[1920, 1080, jpeg(1920, 1080)], [1424, 740, jpeg(1424, 740)]] as const) {
       const { socket, messages, sent, frame } = await screencast(2560 / 1920, { width: 1920, height: 1080 });
       frame(width, height, data);
