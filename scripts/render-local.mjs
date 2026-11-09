@@ -3,7 +3,7 @@
  * Renders a captured session on this machine, the way recorder-beta does, to iterate on post-production without a
  * deploy or a new recording.
  *
- *   node scripts/render-local.mjs <session dir> [out.mp4] [--zoom 2] [--background toru-mist] [--padding 8]
+ *   node scripts/render-local.mjs <session dir> [out.mp4] [--zoom 2] [--background toru-mist] [--padding 8] [--width 2560]
  *
  * The session dir holds the server's raw.mp4 and observation.json (from /data/jobs/<id> on recorder-beta). Build the
  * packages first: pnpm --filter ./packages/render-contract --filter ./packages/browser --filter ./packages/render-host
@@ -22,8 +22,9 @@ const flag = (name, fallback) => { const at = args.indexOf(`--${name}`); return 
 const zoom = flag('zoom');
 const background = flag('background', 'toru-mist');
 const padding = Number(flag('padding', '8'));
+const width = flag('width');
 const [dir, outArg] = args;
-if (!dir) { console.error('usage: render-local.mjs <session dir> [out.mp4] [--zoom 2] [--background toru-mist] [--padding 8]'); process.exit(2); }
+if (!dir) { console.error('usage: render-local.mjs <session dir> [out.mp4] [--zoom 2] [--background toru-mist] [--padding 8] [--width 2560]'); process.exit(2); }
 const session = resolve(dir);
 const raw = join(session, 'raw.mp4');
 const out = resolve(outArg ?? join(session, 'local.mp4'));
@@ -39,6 +40,7 @@ const config = buildExporterConfig(observation, {
   bitrate: Math.min(8_000_000, Math.round(450 * 1024 ** 2 * 8 / seconds / 100_000) * 100_000),
   compressPauses: observation.idleRanges !== undefined,
   ...(zoom ? { zoomScale: Number(zoom) } : {}),
+  ...(width ? { width: Number(width), height: Math.round(Number(width) * observation.height / observation.width / 2) * 2 } : {}),
 });
 const plan = { zoomRegions: config.zoomRegions, trimRegions: config.trimRegions, review: [...reviewCapture(observation), ...reviewCamera(config, observation)] };
 await writeFile(out.replace(/\.mp4$/, '.plan.json'), JSON.stringify(plan, null, 2));

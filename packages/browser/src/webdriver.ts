@@ -480,6 +480,12 @@ type WebDriverOptions = {
    * to the same device scale). Defaults to 1.
    */
   captureScale?: number;
+  /**
+   * How many times slower than a viewer should see it a scroll is performed while recording, for a capture that takes
+   * few frames a second (a sharp capture on a 1x screen, about 11): the timeline marks the span with this pace and the
+   * render plays it back that much faster, so a 400ms glide keeps a frame every 33ms. Defaults to 1.
+   */
+  scrollPace?: number;
   now?: () => Date;
   resolveHostname?: (hostname: string) => Promise<string[]>;
 };
@@ -504,6 +510,7 @@ export class WebDriverBrowserDriver implements BrowserDriver {
   readonly streamingVideoEncoder: StreamingVideoEncoder;
   readonly recordingFrameRate: number;
   readonly captureScale: number;
+  readonly scrollPace: number;
   readonly now: () => Date;
   readonly resolveHostname: (hostname: string) => Promise<string[]>;
 
@@ -519,6 +526,8 @@ export class WebDriverBrowserDriver implements BrowserDriver {
     this.recordingFrameRate = options.recordingFrameRate ?? 30;
     this.captureScale = options.captureScale ?? 1;
     if (!(Number.isFinite(this.captureScale) && this.captureScale >= 1 && this.captureScale <= 3)) throw new RangeError("captureScale must be between 1 and 3");
+    this.scrollPace = options.scrollPace ?? 1;
+    if (!(Number.isFinite(this.scrollPace) && this.scrollPace >= 1 && this.scrollPace <= 4)) throw new RangeError("scrollPace must be between 1 and 4");
     this.now = options.now ?? (() => new Date());
     this.resolveHostname =
       options.resolveHostname ??
@@ -615,6 +624,7 @@ export class WebDriverBrowserDriver implements BrowserDriver {
       this.recordingFrameRate,
       profile,
       this.captureScale,
+      this.scrollPace,
     );
     try {
       await context.initialize();
@@ -703,6 +713,7 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
     readonly recordingFrameRate = 30,
     readonly profileDirectory: string | undefined = undefined,
     readonly captureScale = 1,
+    readonly scrollPace = 1,
   ) {
     this.basePath = `/session/${encodeURIComponent(sessionId)}`;
   }
@@ -2353,8 +2364,15 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
     const steps = amount > 10 ? Math.min(3_000, Math.round(amount)) : Math.max(1, amount) * 100;
     const deltaX = direction === "left" ? -steps : direction === "right" ? steps : 0;
     const deltaY = direction === "up" ? -steps : direction === "down" ? steps : 0;
+    // While recording a slow capture the glide is drawn `scrollPace` times longer than Chrome's own and marked for the
+    // render to play back that much faster (see WebDriverOptions.scrollPace).
+    const paced = this.recordingStartedAtMs !== null && this.scrollPace > 1;
+    const durationMs = paced ? Math.round(Math.min(700, 250 + steps * 0.4) * this.scrollPace) : 0;
+    const startedAtMs = this.recordingStartedAtMs === null ? 0 : Date.now() - this.recordingStartedAtMs;
     const animated = await this.executeScript("smooth_scroll_by", smoothScrollScript,
-      [target.x, target.y, deltaX, deltaY]).catch(() => false);
+      paced ? [target.x, target.y, deltaX, deltaY, durationMs] : [target.x, target.y, deltaX, deltaY]).catch(() => false);
+    // The paced script resolves when the glide lands; the settle below adds still frames that play at normal speed.
+    const landedAtMs = this.recordingStartedAtMs === null ? 0 : Date.now() - this.recordingStartedAtMs;
     if (animated !== true) await this.command("browser_scroll", () =>
       this.transport.request("POST", `${this.basePath}/actions`, {
         actions: [
@@ -2377,7 +2395,10 @@ class WebDriverContext implements BrowserContextDriver, BrowserRefDriver {
       }),
     );
     await this.settleScroll();
-    this.recordSemanticAction("scroll", null, "viewport");
+    if (paced && animated === true && this.recordingStartedAtMs !== null) {
+      this.semanticActions.push({ atMs: startedAtMs, endMs: landedAtMs, type: "scroll", ref: null,
+        element: "viewport", pace: this.scrollPace });
+    } else this.recordSemanticAction("scroll", null, "viewport");
   }
 
   async typeText(text: string): Promise<void> {

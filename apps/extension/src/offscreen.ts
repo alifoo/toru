@@ -124,6 +124,12 @@ function channelFor(tabId: number): DebuggerChannel {
   // screen, a window another one covers), and an unbounded wait there hung the click behind it until the server
   // gave the browser up. A press that fails never sends its release, so it clears the flag itself.
   let capturing: Promise<unknown> | undefined, inputting: Promise<unknown> | undefined, observing: Promise<unknown> | undefined;
+  const inFlight = new Set<Promise<unknown>>();
+  // Two frames in flight at once leave Chrome mapping every later mouse event through the wrong scale, for good: on a
+  // 1x screen at a scale of 2 a press aimed at (1316, 717) lands at (658, 358), and the next card along opens. Setting
+  // the same device metrics again puts it right (no resize, under a millisecond), so a mouse event that follows an
+  // overlap sends them first.
+  let metrics: Record<string, unknown> | undefined, overlapped = false;
   let pressed = false, releasedAt = 0;
   const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
   const send = async (method: string, params: Record<string, unknown> = {}) => {
@@ -138,6 +144,10 @@ function channelFor(tabId: number): DebuggerChannel {
       let failed = false;
       try {
         await Promise.race([Promise.all([capturing?.catch(() => undefined), previous]), pause(1_500)]);
+        if (overlapped && metrics && !inFlight.size) {
+          overlapped = false;
+          await worker('send', { tabId, method: 'Emulation.setDeviceMetricsOverride', params: metrics }).catch(() => undefined);
+        }
         return await worker('send', { tabId, method, params });
       }
       catch (error) { failed = true; throw error; }
@@ -153,9 +163,15 @@ function channelFor(tabId: number): DebuggerChannel {
         const busy = inputting ?? observing;
         if (busy) await Promise.race([busy.catch(() => undefined), pause(250)]); else await pause(15);
       }
-      capturing = Promise.race([worker('send', { tabId, method, params }),
+      // The socket asks for one frame at a time; a frame that outlives its wait can still overlap the next, and input
+      // waits for every one in flight.
+      const frame = Promise.race([worker('send', { tabId, method, params }),
         pause(5_000).then(() => { throw new Error('screenshot_timeout'); })]);
-      return await capturing;
+      if (inFlight.size || observing) overlapped = true;
+      inFlight.add(frame);
+      capturing = Promise.allSettled([...inFlight]);
+      try { return await frame; }
+      finally { inFlight.delete(frame); capturing = inFlight.size ? Promise.allSettled([...inFlight]) : undefined; }
     }
     if (method === 'Page.captureScreenshot') {
       // The navigator's observation. Two screenshots at once render the view at two scales, and the observation came
@@ -169,6 +185,7 @@ function channelFor(tabId: number): DebuggerChannel {
       observing = mine;
       try {
         await Promise.race([capturing?.catch(() => undefined), pause(1_500)]);
+        if (inFlight.size) overlapped = true;
         try { return await once(); }
         catch (error) {
           if ((error as Error).message !== 'screenshot_timeout') throw error;
@@ -180,6 +197,8 @@ function channelFor(tabId: number): DebuggerChannel {
         if (observing === mine) observing = undefined;
       }
     }
+    if (method === 'Emulation.setDeviceMetricsOverride') metrics = params;
+    if (method === 'Emulation.clearDeviceMetricsOverride') metrics = undefined;
     return worker('send', { tabId, method, params });
   };
   return {
@@ -217,7 +236,8 @@ async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?:
   // The page layout the server chose (1920x1080 unless the recording picked another preset). A server that names
   // none predates the choice and gets the 1280x720 it expects; either way the recording reports what it used.
   const viewport = chooseViewport(input.viewport);
-  const scale = captureScaleFor(viewport);
+  const sharp = input.sharpCapture === true;
+  const scale = captureScaleFor(viewport, sharp);
   await closeSession();
   const { tabId } = await worker<{ tabId: number }>('open', { viewport });
   const channel = channelFor(tabId);
@@ -227,7 +247,7 @@ async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?:
     .then((result) => (result as { result?: { value?: unknown } }).result?.value, () => undefined);
   // Asked for a sharp capture, a 1x screen renders at the capture scale anyway (2560 wide): the socket then renders
   // each frame itself, which flickers the window, a cost the recording chose. A denser screen keeps its own scale.
-  const render = input.sharpCapture === true ? Math.max(renderScaleFor(screenScale), scale) : renderScaleFor(screenScale);
+  const render = sharp ? Math.max(renderScaleFor(screenScale), scale) : renderScaleFor(screenScale);
   useDebuggerChannel(channel, scale, render);
   let sessionPath = '';
   // The screencast asks for the viewport at `scale` (2560 device pixels wide at most): on a Retina screen Chrome scales
@@ -241,9 +261,13 @@ async function open(input: { url?: unknown; allowedOrigins?: unknown; viewport?:
       return value;
     },
   };
-  const encoder = new WebCodecsStreamingEncoder(captureFrameSize(viewport));
+  const encoder = new WebCodecsStreamingEncoder(captureFrameSize(viewport, sharp));
   // The user's Chrome resolves names itself; the driver's private-network check applies to Toru's own browsers.
-  const browser = new WebDriverBrowserDriver(transport, { resolveHostname: async () => ['93.184.216.34'], streamingVideoEncoder: encoder, recordingFrameRate: 30, captureScale: scale });
+  // Rendering each frame itself, the socket takes about 11 a second at 3840: a scroll is drawn three times slower and
+  // played back three times faster, for a frame every 30ms or so. Two frames in flight at once would be faster but
+  // come back drawn at the wrong scale now and then (a page shrunk into a corner, a flash in the video).
+  const slowCapture = sharp && render > (typeof screenScale === 'number' ? screenScale : 1);
+  const browser = new WebDriverBrowserDriver(transport, { resolveHostname: async () => ['93.184.216.34'], streamingVideoEncoder: encoder, recordingFrameRate: 30, captureScale: scale, scrollPace: slowCapture ? 3 : 1 });
   try {
     const driver = await browser.createContext({
       viewport: { ...viewport }, allowedOrigins, sessionState: new TextEncoder().encode('{"cookies":[],"origins":[]}'), allowDownload: false, allowPopup: false,

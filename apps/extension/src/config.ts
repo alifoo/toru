@@ -31,9 +31,15 @@ export const MAX_CAPTURE_WIDTH = 2560;
  * renders at the screen's own scale (renderScaleFor), so a 1x screen yields 1x frames, and the encoder may settle
  * for less on a machine that cannot encode that size; the recording reports its size.
  */
-export function captureScaleFor(viewport: Viewport): number {
-  return Math.min(2, MAX_CAPTURE_WIDTH / viewport.width);
+export function captureScaleFor(viewport: Viewport, sharp = false): number {
+  return Math.min(2, (sharp ? SHARP_CAPTURE_WIDTH : MAX_CAPTURE_WIDTH) / viewport.width);
 }
+/**
+ * How wide a sharp capture (the recording's sharpCapture option) goes: twice a 1920 layout, so the camera's 2x zoom on
+ * a 1920 render shows the page pixel for pixel instead of upscaling it 1.5x, and a wide shot is downscaled. 1440x900
+ * records as 2880x1800 and 1280x720 as 2560x1440, as before.
+ */
+export const SHARP_CAPTURE_WIDTH = 3840;
 /**
  * Device pixels per CSS pixel the recording tab renders at: the screen's own (devicePixelRatio of the fresh tab at
  * 100%), 1 to 3. Any other emulated scale makes every Page.captureScreenshot re-render the visible window at that
@@ -49,8 +55,8 @@ export function renderScaleFor(screenScale: unknown): number {
   return Math.min(3, Math.max(1, scale));
 }
 /** The frame size a viewport is captured at: even integers, as a video encoder needs. */
-export function captureFrameSize(viewport: Viewport): Viewport {
-  const scale = captureScaleFor(viewport);
+export function captureFrameSize(viewport: Viewport, sharp = false): Viewport {
+  const scale = captureScaleFor(viewport, sharp);
   const even = (value: number) => Math.max(2, Math.round(value / 2) * 2);
   return { width: even(viewport.width * scale), height: even(viewport.height * scale) };
 }

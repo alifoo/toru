@@ -342,6 +342,11 @@ export type CapturePointer = {
 export type CaptureSemanticAction = {
   /** End of a continuous interaction, such as typing, on the source clock. */
   endMs?: number;
+  /**
+   * How many times slower than a viewer should see it the driver performed this span (a scroll, for a capture that
+   * takes few frames a second): the render plays atMs–endMs back this many times faster.
+   */
+  pace?: number;
   /** Result framing in normalized viewport coordinates; independent of the last click. */
   focus?: { x: number; y: number; width: number; height: number };
   atMs: number;
